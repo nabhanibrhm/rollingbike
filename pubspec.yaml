@@ -1,0 +1,66 @@
+name: rollingbike
+description: "Offline-first riding telemetry tracker — Black Neon."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # --- State management ---
+  flutter_riverpod: ^2.6.1            # proven 2.6.x line (3.x exists but adds migration churn)
+
+  # --- Local embedded DB ---
+  # isar_community is the maintained drop-in fork of the (now dormant) `isar`.
+  # API-identical, with fixes for modern Android (incl. 16KB page sizes).
+  # All three isar_community_* packages MUST stay on the same exact version.
+  isar_community: 3.3.2
+  isar_community_flutter_libs: 3.3.2
+
+  # --- Geolocation + background execution ---
+  geolocator: ^14.0.3
+  flutter_background_service: ^5.1.0
+
+  # --- Map + spatial math ---
+  flutter_map: ^8.3.0                 # v8 API (differs from older flutter_map tutorials)
+  latlong2: ^0.9.1
+
+  # --- Permissions (background location, notifications) ---
+  permission_handler: ^11.3.1
+
+  # --- Filesystem path for the Isar directory ---
+  path_provider: ^2.1.5
+
+  # --- Typography ---
+  google_fonts: ^6.2.1                # NOTE: fetches fonts over network on first run
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  isar_community_generator: 3.3.2     # must match isar_community version above
+
+flutter:
+  uses-material-design: true
+
+  # ---------------------------------------------------------------------------
+  # OFFLINE-FIRST FONT HARDENING (recommended before production):
+  # google_fonts downloads JetBrains Mono on first launch — telemetry typography
+  # would be invisible offline until cached. To bundle instead:
+  #   1. Download JetBrainsMono-Regular/-Medium/-Bold.ttf into assets/fonts/
+  #   2. Uncomment below and use TextStyle(fontFamily: 'JetBrainsMono').
+  # ---------------------------------------------------------------------------
+  # fonts:
+  #   - family: JetBrainsMono
+  #     fonts:
+  #       - asset: assets/fonts/JetBrainsMono-Regular.ttf
+  #       - asset: assets/fonts/JetBrainsMono-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/JetBrainsMono-Bold.ttf
+  #         weight: 700
