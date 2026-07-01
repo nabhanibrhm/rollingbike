@@ -139,24 +139,49 @@ Future<void> onStart(ServiceInstance service) async {
 
   var totalDistanceMeters = 0.0;
   var maxSpeedKmh = 0.0;
+  var currentSpeedKmh = 0.0;
   var pointCount = 0;
   double? lastLat;
   double? lastLon;
+  var lastFixAt = startedAt;
 
   StreamSubscription<Position>? positionSub;
+  Timer? ticker;
+
+  int elapsedSeconds() => DateTime.now().difference(startedAt).inSeconds;
+  double avgSpeedKmh() {
+    final d = elapsedSeconds();
+    return d > 0 ? (totalDistanceMeters / d) * 3.6 : 0.0;
+  }
+
+  void emitTelemetry() {
+    service.invoke('telemetry', {
+      'rideId': rideId,
+      'distanceMeters': totalDistanceMeters,
+      'speedKmh': currentSpeedKmh,
+      'maxSpeedKmh': maxSpeedKmh,
+      'avgSpeedKmh': avgSpeedKmh(),
+      'durationSeconds': elapsedSeconds(),
+      'pointCount': pointCount,
+      'finished': false,
+      'lat': lastLat,
+      'lon': lastLon,
+    });
+  }
 
   Future<void> finalizeAndStop() async {
+    ticker?.cancel();
     await positionSub?.cancel();
     final endedAt = DateTime.now();
     final durationSeconds = endedAt.difference(startedAt).inSeconds;
-    final avgSpeedKmh =
+    final finalAvg =
         durationSeconds > 0 ? (totalDistanceMeters / durationSeconds) * 3.6 : 0.0;
 
     ride
       ..endTime = endedAt
       ..totalDistanceMeters = totalDistanceMeters
       ..durationSeconds = durationSeconds
-      ..averageSpeedKmh = avgSpeedKmh
+      ..averageSpeedKmh = finalAvg
       ..maxSpeedKmh = maxSpeedKmh;
     await db.saveRide(ride);
 
@@ -165,7 +190,7 @@ Future<void> onStart(ServiceInstance service) async {
       'distanceMeters': totalDistanceMeters,
       'speedKmh': 0.0,
       'maxSpeedKmh': maxSpeedKmh,
-      'avgSpeedKmh': avgSpeedKmh,
+      'avgSpeedKmh': finalAvg,
       'durationSeconds': durationSeconds,
       'pointCount': pointCount,
       'finished': true,
@@ -175,6 +200,24 @@ Future<void> onStart(ServiceInstance service) async {
   }
 
   service.on('stop').listen((_) => finalizeAndStop());
+
+  // 1 Hz heartbeat: keeps the duration/avg (and the notification) advancing even
+  // while stationary — GPS fixes are gated by the distance filter, so without
+  // this the on-screen timer would freeze between fixes.
+  ticker = Timer.periodic(const Duration(seconds: 1), (_) async {
+    // Decay the shown speed to zero if no fresh fix has arrived (rider stopped).
+    if (DateTime.now().difference(lastFixAt).inSeconds >= 3) {
+      currentSpeedKmh = 0.0;
+    }
+    emitTelemetry();
+    if (service is AndroidServiceInstance) {
+      await service.setForegroundNotificationInfo(
+        title: 'RollingBike — recording',
+        content: '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
+            '${_formatDuration(elapsedSeconds())}',
+      );
+    }
+  });
 
   final settings = LocationSettings(
     accuracy: LocationAccuracy.best,
@@ -189,10 +232,11 @@ Future<void> onStart(ServiceInstance service) async {
     }
     lastLat = pos.latitude;
     lastLon = pos.longitude;
+    lastFixAt = DateTime.now();
 
     final rawSpeed = (pos.speed.isFinite && pos.speed > 0) ? pos.speed : 0.0;
-    final speedKmh = rawSpeed * 3.6;
-    if (speedKmh > maxSpeedKmh) maxSpeedKmh = speedKmh;
+    currentSpeedKmh = rawSpeed * 3.6;
+    if (currentSpeedKmh > maxSpeedKmh) maxSpeedKmh = currentSpeedKmh;
 
     await db.addTrackPoint(
       TrackPoint()
@@ -205,36 +249,24 @@ Future<void> onStart(ServiceInstance service) async {
     );
     pointCount++;
 
-    final durationSeconds = DateTime.now().difference(startedAt).inSeconds;
-    final avgSpeedKmh =
-        durationSeconds > 0 ? (totalDistanceMeters / durationSeconds) * 3.6 : 0.0;
-
+    // Persist the running aggregates so a crash mid-ride keeps a sane summary.
     ride
       ..totalDistanceMeters = totalDistanceMeters
-      ..durationSeconds = durationSeconds
-      ..averageSpeedKmh = avgSpeedKmh
+      ..durationSeconds = elapsedSeconds()
+      ..averageSpeedKmh = avgSpeedKmh()
       ..maxSpeedKmh = maxSpeedKmh;
     await db.saveRide(ride);
 
-    if (service is AndroidServiceInstance) {
-      await service.setForegroundNotificationInfo(
-        title: 'RollingBike — recording',
-        content: '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
-            '${speedKmh.toStringAsFixed(0)} km/h',
-      );
-    }
-
-    service.invoke('telemetry', {
-      'rideId': rideId,
-      'distanceMeters': totalDistanceMeters,
-      'speedKmh': speedKmh,
-      'maxSpeedKmh': maxSpeedKmh,
-      'avgSpeedKmh': avgSpeedKmh,
-      'durationSeconds': durationSeconds,
-      'pointCount': pointCount,
-      'finished': false,
-      'lat': pos.latitude,
-      'lon': pos.longitude,
-    });
+    emitTelemetry();
   });
+}
+
+/// Formats seconds as `m:ss` (or `h:mm:ss` past an hour) for the notification.
+String _formatDuration(int seconds) {
+  final h = seconds ~/ 3600;
+  final m = (seconds % 3600) ~/ 60;
+  final s = seconds % 60;
+  final mm = m.toString().padLeft(2, '0');
+  final ss = s.toString().padLeft(2, '0');
+  return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
 }
