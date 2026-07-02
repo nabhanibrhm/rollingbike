@@ -19,11 +19,21 @@ class Ride {
   /// When the ride ended. Null while the ride is still being recorded.
   DateTime? endTime;
 
+  /// User-given trip name, set when the rider saves the ride from the summary
+  /// screen. Null until named (an unnamed, freshly-recorded ride). A discarded
+  /// ride is deleted outright rather than left unnamed.
+  String? name;
+
   /// Total distance travelled, in meters (Haversine-summed in the GPS engine).
   double totalDistanceMeters = 0;
 
-  /// Elapsed riding time, in whole seconds.
+  /// Total elapsed riding time (start→stop wall clock), in whole seconds.
+  /// Strava's "Elapsed time".
   int durationSeconds = 0;
+
+  /// Time spent actually moving (speed above the stop threshold), in whole
+  /// seconds. Strava's "Moving time" — excludes stops at lights, breaks, etc.
+  int movingSeconds = 0;
 
   /// Mean speed across the ride, in km/h.
   double averageSpeedKmh = 0;

@@ -55,6 +55,17 @@ class DatabaseService {
 
   Future<Ride?> getRideById(int id) => isar.rides.get(id);
 
+  /// Sets the user-given [name] on an existing ride (from the summary screen).
+  /// No-op if the ride was already deleted.
+  Future<void> setRideName(int rideId, String name) {
+    return isar.writeTxn(() async {
+      final ride = await isar.rides.get(rideId);
+      if (ride == null) return;
+      ride.name = name;
+      await isar.rides.put(ride);
+    });
+  }
+
   /// Deletes a ride and every track point that belongs to it.
   Future<void> deleteRide(int rideId) {
     return isar.writeTxn(() async {

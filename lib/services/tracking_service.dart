@@ -12,6 +12,11 @@ import '../data/models/track_point.dart';
 /// Foreground-service notification id (arbitrary, stable across the app).
 const int _kNotificationId = 888;
 
+/// Speed floor (km/h) below which the rider counts as "stopped" — moving time
+/// stops accruing. Mirrors Strava/Super Biker auto-pause behaviour; kept a
+/// touch high so a motorcycle idling at a light doesn't count as moving.
+const double _kMovingSpeedThresholdKmh = 3.0;
+
 /// Live snapshot pushed from the background isolate to the UI on each fix (and
 /// once more, finalised, when a ride stops).
 class LiveTelemetry {
@@ -22,6 +27,7 @@ class LiveTelemetry {
     required this.maxSpeedKmh,
     required this.avgSpeedKmh,
     required this.durationSeconds,
+    required this.movingSeconds,
     required this.pointCount,
     required this.finished,
     this.lat,
@@ -34,6 +40,9 @@ class LiveTelemetry {
   final double maxSpeedKmh;
   final double avgSpeedKmh;
   final int durationSeconds;
+
+  /// Time spent moving (speed above the stop threshold), in whole seconds.
+  final int movingSeconds;
   final int pointCount;
   final bool finished;
   final double? lat;
@@ -48,6 +57,7 @@ class LiveTelemetry {
         maxSpeedKmh: (m['maxSpeedKmh'] as num).toDouble(),
         avgSpeedKmh: (m['avgSpeedKmh'] as num).toDouble(),
         durationSeconds: (m['durationSeconds'] as num).toInt(),
+        movingSeconds: (m['movingSeconds'] as num?)?.toInt() ?? 0,
         pointCount: (m['pointCount'] as num).toInt(),
         finished: (m['finished'] as bool?) ?? false,
         lat: (m['lat'] as num?)?.toDouble(),
@@ -140,6 +150,7 @@ Future<void> onStart(ServiceInstance service) async {
   var totalDistanceMeters = 0.0;
   var maxSpeedKmh = 0.0;
   var currentSpeedKmh = 0.0;
+  var movingSeconds = 0;
   var pointCount = 0;
   double? lastLat;
   double? lastLon;
@@ -162,6 +173,7 @@ Future<void> onStart(ServiceInstance service) async {
       'maxSpeedKmh': maxSpeedKmh,
       'avgSpeedKmh': avgSpeedKmh(),
       'durationSeconds': elapsedSeconds(),
+      'movingSeconds': movingSeconds,
       'pointCount': pointCount,
       'finished': false,
       'lat': lastLat,
@@ -181,6 +193,7 @@ Future<void> onStart(ServiceInstance service) async {
       ..endTime = endedAt
       ..totalDistanceMeters = totalDistanceMeters
       ..durationSeconds = durationSeconds
+      ..movingSeconds = movingSeconds
       ..averageSpeedKmh = finalAvg
       ..maxSpeedKmh = maxSpeedKmh;
     await db.saveRide(ride);
@@ -192,6 +205,7 @@ Future<void> onStart(ServiceInstance service) async {
       'maxSpeedKmh': maxSpeedKmh,
       'avgSpeedKmh': finalAvg,
       'durationSeconds': durationSeconds,
+      'movingSeconds': movingSeconds,
       'pointCount': pointCount,
       'finished': true,
     });
@@ -208,6 +222,11 @@ Future<void> onStart(ServiceInstance service) async {
     // Decay the shown speed to zero if no fresh fix has arrived (rider stopped).
     if (DateTime.now().difference(lastFixAt).inSeconds >= 3) {
       currentSpeedKmh = 0.0;
+    }
+    // Accrue moving time once per tick while above the stop threshold — the
+    // decay above means a stationary rider stops counting after ~3 s.
+    if (currentSpeedKmh > _kMovingSpeedThresholdKmh) {
+      movingSeconds++;
     }
     emitTelemetry();
     if (service is AndroidServiceInstance) {
@@ -253,6 +272,7 @@ Future<void> onStart(ServiceInstance service) async {
     ride
       ..totalDistanceMeters = totalDistanceMeters
       ..durationSeconds = elapsedSeconds()
+      ..movingSeconds = movingSeconds
       ..averageSpeedKmh = avgSpeedKmh()
       ..maxSpeedKmh = maxSpeedKmh;
     await db.saveRide(ride);

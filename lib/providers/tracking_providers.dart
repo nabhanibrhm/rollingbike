@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../data/database_service.dart';
 import '../services/permission_service.dart';
 import '../services/tracking_service.dart';
 
@@ -97,6 +98,37 @@ class TrackingController extends StateNotifier<TrackingUiState> {
   }
 
   void stop() => _service.stopRide();
+
+  /// Names the just-finished ride (already persisted) and returns to idle,
+  /// clearing the finished summary and route so the next ride starts fresh.
+  Future<void> saveFinishedRide(String name) async {
+    final t = state.lastFinished;
+    if (t != null && name.trim().isNotEmpty) {
+      await DatabaseService.instance.setRideName(t.rideId, name.trim());
+    }
+    _resetToIdle();
+  }
+
+  /// Deletes the just-finished ride (and its track points) and returns to idle.
+  Future<void> discardFinishedRide() async {
+    final t = state.lastFinished;
+    if (t != null) {
+      await DatabaseService.instance.deleteRide(t.rideId);
+    }
+    _resetToIdle();
+  }
+
+  /// Dismisses the summary without naming or deleting — the ride stays in the
+  /// DB unnamed (crash-safe default when the rider just backs out).
+  void keepFinishedRide() => _resetToIdle();
+
+  void _resetToIdle() {
+    state = state.copyWith(
+      route: const [],
+      clearTelemetry: true,
+      clearFinished: true,
+    );
+  }
 
   @override
   void dispose() {

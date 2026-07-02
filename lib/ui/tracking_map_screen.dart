@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../providers/tracking_providers.dart';
 import '../theme/app_theme.dart';
+import 'ride_summary_screen.dart';
 
 /// Full-screen dark map with a floating glassmorphic telemetry sheet — the
 /// Gowez-style tracking screen.
@@ -29,11 +30,20 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(trackingControllerProvider);
 
-    // Follow the rider and surface permission errors.
+    // Follow the rider, present the post-ride summary, and surface errors.
     ref.listen<TrackingUiState>(trackingControllerProvider, (prev, next) {
       final t = next.telemetry;
       if (_mapReady && t?.lat != null && t?.lon != null) {
         _mapController.move(LatLng(t!.lat!, t.lon!), _mapController.camera.zoom);
+      }
+      // A ride just finished → open the summary screen once.
+      if (next.lastFinished != null && prev?.lastFinished == null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                RideSummaryScreen(telemetry: next.lastFinished!),
+          ),
+        );
       }
       if (next.error != null && next.error != prev?.error) {
         ScaffoldMessenger.of(context)
