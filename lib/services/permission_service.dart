@@ -14,6 +14,34 @@ class PermissionResult {
 class PermissionService {
   const PermissionService._();
 
+  /// Lightweight check for showing the rider's position on the idle map: just
+  /// location services + a foreground (while-in-use) grant. Deliberately does
+  /// NOT request notifications or background location — those belong to the
+  /// heavier [ensureTrackingPermissions] flow run when a ride starts.
+  static Future<PermissionResult> ensureForegroundLocation() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      return const PermissionResult(
+        false,
+        'Location services are turned off. Enable GPS and try again.',
+      );
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return const PermissionResult(
+        false,
+        'Location permission denied. Grant it in system settings.',
+      );
+    }
+
+    return const PermissionResult(true, 'granted');
+  }
+
   /// Requests everything the tracking service needs. Returns [PermissionResult]
   /// with `granted == true` once foreground location is available (the minimum
   /// to record); notification + background grants are best-effort.

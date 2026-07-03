@@ -1,12 +1,16 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../providers/tracking_providers.dart';
+import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
+import 'history_screen.dart';
 import 'ride_summary_screen.dart';
 
 /// Full-screen dark map with a floating glassmorphic telemetry sheet — the
@@ -25,6 +29,51 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
   static const LatLng _fallbackCenter = LatLng(-6.2088, 106.8456);
 
   bool _mapReady = false;
+
+  /// The rider's last known position while idle (before/without a ride), used
+  /// to center the map on open and show a "you are here" marker.
+  LatLng? _myLocation;
+  bool _locating = false;
+
+  /// Fetches the current position, centers the map on it, and drops the idle
+  /// marker. Runs once the map is ready (app open) and on the locate button.
+  Future<void> _locateMe({bool moveCamera = true}) async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    try {
+      final perm = await PermissionService.ensureForegroundLocation();
+      if (!perm.granted) {
+        if (mounted) _showError(perm.message);
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      if (!mounted) return;
+      final here = LatLng(pos.latitude, pos.longitude);
+      setState(() => _myLocation = here);
+      if (moveCamera && _mapReady) {
+        _mapController.move(here, 16);
+      }
+    } catch (e) {
+      if (mounted) _showError('Could not get your location. Try again.');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.zinc,
+          content: Text(message, style: const TextStyle(color: AppColors.danger)),
+        ),
+      );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +111,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.black,
+      drawer: const _AppDrawer(),
       body: Stack(
         children: [
           FlutterMap(
@@ -70,7 +120,11 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
               initialCenter: _fallbackCenter,
               initialZoom: 16,
               backgroundColor: AppColors.black,
-              onMapReady: () => _mapReady = true,
+              onMapReady: () {
+                _mapReady = true;
+                // Center on the rider as soon as the map can accept moves.
+                _locateMe();
+              },
             ),
             children: [
               TileLayer(
@@ -104,12 +158,27 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
             ],
           ),
           const _MapAttribution(),
+          const _MenuButton(),
+          // Locate button sits just above the telemetry sheet (right-aligned)
+          // so it's never hidden behind the sheet regardless of its height.
           Align(
             alignment: Alignment.bottomCenter,
-            child: _TelemetrySheet(
-              state: state,
-              onStart: () => ref.read(trackingControllerProvider.notifier).start(),
-              onStop: () => ref.read(trackingControllerProvider.notifier).stop(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 16, bottom: 12),
+                  child: _LocateButton(busy: _locating, onTap: _locateMe),
+                ),
+                _TelemetrySheet(
+                  state: state,
+                  onStart: () =>
+                      ref.read(trackingControllerProvider.notifier).start(),
+                  onStop: () =>
+                      ref.read(trackingControllerProvider.notifier).stop(),
+                ),
+              ],
             ),
           ),
         ],
@@ -121,7 +190,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
     final t = state.telemetry;
     if (t?.lat != null && t?.lon != null) return LatLng(t!.lat!, t.lon!);
     if (state.route.isNotEmpty) return state.route.last;
-    return null;
+    return _myLocation; // idle: show where the rider is before a ride starts
   }
 }
 
@@ -165,6 +234,140 @@ class _MapAttribution extends StatelessWidget {
             '© OpenStreetMap · CARTO',
             style: TextStyle(color: AppColors.textDim, fontSize: 9),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Floating glass hamburger that opens the app drawer, mirroring the
+/// attribution chip in the opposite corner.
+class _MenuButton extends StatelessWidget {
+  const _MenuButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 8,
+      left: 8,
+      child: SafeArea(
+        child: Builder(
+          builder: (context) => ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Material(
+                color: AppColors.zinc.withValues(alpha: 0.6),
+                child: InkWell(
+                  onTap: () => Scaffold.of(context).openDrawer(),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: AppColors.cyan.withValues(alpha: 0.22)),
+                    ),
+                    child: const Icon(Icons.menu, color: AppColors.textBright),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Floating "my location" button — re-fetches the current position and
+/// re-centers the map. Shows a spinner while locating.
+class _LocateButton extends StatelessWidget {
+  const _LocateButton({required this.busy, required this.onTap});
+
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Material(
+          color: AppColors.zinc.withValues(alpha: 0.72),
+          child: InkWell(
+            onTap: busy ? null : onTap,
+            child: Container(
+              width: 52,
+              height: 52,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border:
+                    Border.all(color: AppColors.cyan.withValues(alpha: 0.3)),
+              ),
+              child: busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.4, color: AppColors.cyan),
+                    )
+                  : const Icon(Icons.my_location, color: AppColors.cyan),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Side menu: ride history + exit.
+class _AppDrawer extends StatelessWidget {
+  const _AppDrawer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      backgroundColor: AppColors.zinc,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 24, 20, 20),
+              child: Text(
+                'RollingBike',
+                style: TextStyle(
+                  color: AppColors.cyan,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+            const Divider(color: AppColors.zincBorder, height: 1),
+            ListTile(
+              leading: const Icon(Icons.history, color: AppColors.textBright),
+              title: const Text('History of trips',
+                  style: TextStyle(color: AppColors.textBright)),
+              onTap: () {
+                Navigator.of(context).pop(); // close drawer
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HistoryScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.exit_to_app, color: AppColors.textBright),
+              title: const Text('Exit',
+                  style: TextStyle(color: AppColors.textBright)),
+              onTap: () => SystemNavigator.pop(),
+            ),
+          ],
         ),
       ),
     );
