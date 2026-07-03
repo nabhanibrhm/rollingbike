@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'data/database_service.dart';
-import 'services/tracking_service.dart';
 import 'theme/app_theme.dart';
-import 'ui/tracking_map_screen.dart';
+import 'ui/splash_screen.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Open the local DB and register the background tracking service before the
-  // first frame so the map screen can start a ride immediately.
-  await DatabaseService.instance.open();
-  await TrackingService.instance.configure();
+  // Startup work (open the DB, register the background tracking service) runs
+  // inside SplashScreen so the branded loader is visible while it happens.
   runApp(const ProviderScope(child: RollingBikeApp()));
 }
 
@@ -24,7 +20,7 @@ class RollingBikeApp extends StatelessWidget {
       title: 'RollingBike',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: const TrackingMapScreen(),
+      home: const SplashScreen(),
     );
   }
 }
