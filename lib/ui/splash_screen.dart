@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/database_service.dart';
+import '../services/tile_cache_service.dart';
 import '../services/tracking_service.dart';
 import '../theme/app_theme.dart';
 import 'tracking_map_screen.dart';
@@ -50,6 +51,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _init() async {
     await DatabaseService.instance.open();
+    await TileCacheService.configure();
     await TrackingService.instance.configure();
   }
 

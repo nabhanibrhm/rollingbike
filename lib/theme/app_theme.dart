@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// "Black Neon" palette. Pure-black canvas, zinc cards, electric accents.
 class AppColors {
@@ -15,9 +14,9 @@ class AppColors {
   static const textBright = Color(0xFFE4E4E7);
 }
 
-/// App-wide dark theme with a monospace type scale (JetBrains Mono via
-/// google_fonts — fetched on first launch; bundling is the pubspec-noted
-/// offline-hardening follow-up).
+/// App-wide dark theme with a monospace type scale (JetBrains Mono, bundled as
+/// an asset — see `flutter.fonts` in pubspec.yaml — so it renders offline from
+/// first launch with no network fetch).
 ThemeData buildAppTheme() {
   final base = ThemeData.dark(useMaterial3: true);
   return base.copyWith(
@@ -28,7 +27,8 @@ ThemeData buildAppTheme() {
       surface: AppColors.zinc,
       error: AppColors.danger,
     ),
-    textTheme: GoogleFonts.jetBrainsMonoTextTheme(base.textTheme).apply(
+    textTheme: base.textTheme.apply(
+      fontFamily: 'JetBrainsMono',
       bodyColor: AppColors.textBright,
       displayColor: AppColors.textBright,
     ),

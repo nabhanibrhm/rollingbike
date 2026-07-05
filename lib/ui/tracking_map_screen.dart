@@ -132,7 +132,11 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                     'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'id.co.smma.rollingbike',
-                tileProvider: NetworkTileProvider(),
+                // Offline-first: swallow fetch failures (no error spam / red
+                // tiles when there's no signal) and serve from the persistent
+                // disk cache configured in TileCacheService. Previously-seen
+                // areas keep rendering with zero network.
+                tileProvider: NetworkTileProvider(silenceExceptions: true),
               ),
               if (state.route.length >= 2)
                 PolylineLayer(

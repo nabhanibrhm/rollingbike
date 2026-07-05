@@ -20,7 +20,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Optional: allow the tracking service to resume after a reboot (unused in MVP). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- OSM map tiles + google_fonts fetch. -->
+    <!-- Map tile fetch (cached to disk for offline reuse; fonts are bundled). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
