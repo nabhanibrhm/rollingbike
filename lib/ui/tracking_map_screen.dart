@@ -177,6 +177,10 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                       ref.read(trackingControllerProvider.notifier).start(),
                   onStop: () =>
                       ref.read(trackingControllerProvider.notifier).stop(),
+                  onPause: () =>
+                      ref.read(trackingControllerProvider.notifier).pause(),
+                  onResume: () =>
+                      ref.read(trackingControllerProvider.notifier).resume(),
                 ),
               ],
             ),
@@ -381,19 +385,24 @@ class _TelemetrySheet extends StatelessWidget {
     required this.state,
     required this.onStart,
     required this.onStop,
+    required this.onPause,
+    required this.onResume,
   });
 
   final TrackingUiState state;
   final VoidCallback onStart;
   final VoidCallback onStop;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
 
   @override
   Widget build(BuildContext context) {
     final tracking = state.isTracking;
+    final paused = state.isPaused;
     // While tracking, show live telemetry; when stopped, show the last ride's
     // finalised summary if present.
     final t = tracking ? state.telemetry : (state.lastFinished ?? state.telemetry);
-    final speedKmh = tracking ? (t?.speedKmh ?? 0) : 0.0;
+    final speedKmh = (tracking && !paused) ? (t?.speedKmh ?? 0) : 0.0;
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -447,6 +456,27 @@ class _TelemetrySheet extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (paused) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppColors.cyan.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: AppColors.cyan.withValues(alpha: 0.5)),
+                    ),
+                    child: const Text(
+                      'PAUSED',
+                      style: TextStyle(
+                          color: AppColors.cyan,
+                          fontSize: 12,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -471,26 +501,33 @@ class _TelemetrySheet extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 22),
-                SizedBox(
-                  width: double.infinity,
-                  height: 68,
-                  child: ElevatedButton(
-                    onPressed: tracking ? onStop : onStart,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          tracking ? AppColors.danger : AppColors.volt,
-                      foregroundColor: Colors.black,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                    ),
-                    child: Text(
-                      tracking ? 'STOP RIDE' : 'START RIDE',
-                      style: const TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.w700),
-                    ),
+                if (!tracking)
+                  _SheetButton(
+                    label: 'START RIDE',
+                    color: AppColors.volt,
+                    onPressed: onStart,
+                  )
+                else
+                  Row(
+                    children: [
+                      // Pause ↔ Resume.
+                      Expanded(
+                        child: _SheetButton(
+                          label: paused ? 'RESUME' : 'PAUSE',
+                          color: paused ? AppColors.volt : AppColors.cyan,
+                          onPressed: paused ? onResume : onPause,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _SheetButton(
+                          label: 'STOP',
+                          color: AppColors.danger,
+                          onPressed: onStop,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
               ],
             ),
           ),
@@ -506,6 +543,41 @@ class _TelemetrySheet extends StatelessWidget {
     final mm = m.toString().padLeft(2, '0');
     final ss = s.toString().padLeft(2, '0');
     return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  }
+}
+
+/// Large pill button used in the telemetry sheet (start / pause / resume /
+/// stop). Black label on a solid neon fill.
+class _SheetButton extends StatelessWidget {
+  const _SheetButton({
+    required this.label,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final String label;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 68,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.black,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
   }
 }
 

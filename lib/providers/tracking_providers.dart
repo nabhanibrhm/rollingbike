@@ -15,6 +15,7 @@ final trackingServiceProvider =
 class TrackingUiState {
   const TrackingUiState({
     this.isTracking = false,
+    this.isPaused = false,
     this.telemetry,
     this.route = const [],
     this.lastFinished,
@@ -22,6 +23,7 @@ class TrackingUiState {
   });
 
   final bool isTracking;
+  final bool isPaused;
   final LiveTelemetry? telemetry;
   final List<LatLng> route;
   final LiveTelemetry? lastFinished;
@@ -29,6 +31,7 @@ class TrackingUiState {
 
   TrackingUiState copyWith({
     bool? isTracking,
+    bool? isPaused,
     LiveTelemetry? telemetry,
     List<LatLng>? route,
     LiveTelemetry? lastFinished,
@@ -39,6 +42,7 @@ class TrackingUiState {
   }) {
     return TrackingUiState(
       isTracking: isTracking ?? this.isTracking,
+      isPaused: isPaused ?? this.isPaused,
       telemetry: clearTelemetry ? null : (telemetry ?? this.telemetry),
       route: route ?? this.route,
       lastFinished: clearFinished ? null : (lastFinished ?? this.lastFinished),
@@ -72,7 +76,8 @@ class TrackingController extends StateNotifier<TrackingUiState> {
         route = [...route, point];
       }
     }
-    state = state.copyWith(isTracking: true, telemetry: t, route: route);
+    state =
+        state.copyWith(isTracking: true, isPaused: t.paused, telemetry: t, route: route);
   }
 
   void _onStopped(LiveTelemetry t) {
@@ -89,6 +94,7 @@ class TrackingController extends StateNotifier<TrackingUiState> {
     }
     state = state.copyWith(
       isTracking: true,
+      isPaused: false,
       route: const [],
       clearTelemetry: true,
       clearFinished: true,
@@ -98,6 +104,18 @@ class TrackingController extends StateNotifier<TrackingUiState> {
   }
 
   void stop() => _service.stopRide();
+
+  /// Pauses the active ride (optimistically; telemetry confirms shortly after).
+  void pause() {
+    _service.pauseRide();
+    state = state.copyWith(isPaused: true);
+  }
+
+  /// Resumes a paused ride.
+  void resume() {
+    _service.resumeRide();
+    state = state.copyWith(isPaused: false);
+  }
 
   /// Names the just-finished ride (already persisted) and returns to idle,
   /// clearing the finished summary and route so the next ride starts fresh.
@@ -124,6 +142,8 @@ class TrackingController extends StateNotifier<TrackingUiState> {
 
   void _resetToIdle() {
     state = state.copyWith(
+      isTracking: false,
+      isPaused: false,
       route: const [],
       clearTelemetry: true,
       clearFinished: true,

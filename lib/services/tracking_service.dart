@@ -17,6 +17,23 @@ const int _kNotificationId = 888;
 /// touch high so a motorcycle idling at a light doesn't count as moving.
 const double _kMovingSpeedThresholdKmh = 3.0;
 
+/// Exponential-moving-average weight for the newest speed sample (0..1). Higher
+/// = snappier, lower = smoother. 0.6 stays lively without the GPS jitter.
+const double _kSpeedSmoothing = 0.6;
+
+/// Discard fixes whose reported accuracy is worse than this (meters) — junk GPS
+/// that would otherwise add phantom distance and speed.
+const double _kMaxAccuracyMeters = 25.0;
+
+/// A segment implying a speed above this (km/h) is treated as GPS drift rather
+/// than real movement, and dropped so it can't inflate distance/max speed.
+const double _kMaxPlausibleSpeedKmh = 220.0;
+
+/// After this many consecutive dropped "jumps", assume our reference point has
+/// gone stale and re-anchor to the latest fix — prevents getting stuck
+/// rejecting every fix if the anchor itself was bad.
+const int _kMaxRejectStreak = 3;
+
 /// Live snapshot pushed from the background isolate to the UI on each fix (and
 /// once more, finalised, when a ride stops).
 class LiveTelemetry {
@@ -30,6 +47,7 @@ class LiveTelemetry {
     required this.movingSeconds,
     required this.pointCount,
     required this.finished,
+    this.paused = false,
     this.lat,
     this.lon,
   });
@@ -45,6 +63,9 @@ class LiveTelemetry {
   final int movingSeconds;
   final int pointCount;
   final bool finished;
+
+  /// True while the ride is paused (clock/distance frozen).
+  final bool paused;
   final double? lat;
   final double? lon;
 
@@ -60,6 +81,7 @@ class LiveTelemetry {
         movingSeconds: (m['movingSeconds'] as num?)?.toInt() ?? 0,
         pointCount: (m['pointCount'] as num).toInt(),
         finished: (m['finished'] as bool?) ?? false,
+        paused: (m['paused'] as bool?) ?? false,
         lat: (m['lat'] as num?)?.toDouble(),
         lon: (m['lon'] as num?)?.toDouble(),
       );
@@ -108,6 +130,12 @@ class TrackingService {
   /// Asks the background isolate to finalise the ride and stop the service.
   void stopRide() => _service.invoke('stop');
 
+  /// Pauses recording (freezes the clock/distance; stops GPS).
+  void pauseRide() => _service.invoke('pause');
+
+  /// Resumes a paused recording.
+  void resumeRide() => _service.invoke('resume');
+
   /// Per-fix live telemetry while recording.
   Stream<LiveTelemetry> get telemetry => _service
       .on('telemetry')
@@ -152,6 +180,13 @@ Future<void> onStart(ServiceInstance service) async {
   var currentSpeedKmh = 0.0;
   var movingSeconds = 0;
   var pointCount = 0;
+  var rejectedStreak = 0;
+
+  // Pause state. A "standard" pause: while paused the position stream is stopped
+  // and paused wall-clock time is excluded from elapsed/avg (and moving time).
+  var paused = false;
+  DateTime? pauseStartedAt;
+  var totalPaused = Duration.zero;
   double? lastLat;
   double? lastLon;
   var lastFixAt = startedAt;
@@ -159,7 +194,17 @@ Future<void> onStart(ServiceInstance service) async {
   StreamSubscription<Position>? positionSub;
   Timer? ticker;
 
-  int elapsedSeconds() => DateTime.now().difference(startedAt).inSeconds;
+  // Wall-clock since start, minus all paused time (completed + any in-progress
+  // pause) — so the ride clock freezes while paused.
+  int elapsedSeconds() {
+    var pausedTotal = totalPaused;
+    if (paused && pauseStartedAt != null) {
+      pausedTotal += DateTime.now().difference(pauseStartedAt!);
+    }
+    final elapsed = DateTime.now().difference(startedAt) - pausedTotal;
+    return elapsed.isNegative ? 0 : elapsed.inSeconds;
+  }
+
   double avgSpeedKmh() {
     final d = elapsedSeconds();
     return d > 0 ? (totalDistanceMeters / d) * 3.6 : 0.0;
@@ -176,6 +221,7 @@ Future<void> onStart(ServiceInstance service) async {
       'movingSeconds': movingSeconds,
       'pointCount': pointCount,
       'finished': false,
+      'paused': paused,
       'lat': lastLat,
       'lon': lastLon,
     });
@@ -185,7 +231,8 @@ Future<void> onStart(ServiceInstance service) async {
     ticker?.cancel();
     await positionSub?.cancel();
     final endedAt = DateTime.now();
-    final durationSeconds = endedAt.difference(startedAt).inSeconds;
+    // Exclude paused time from the recorded duration (and thus the average).
+    final durationSeconds = elapsedSeconds();
     final finalAvg =
         durationSeconds > 0 ? (totalDistanceMeters / durationSeconds) * 3.6 : 0.0;
 
@@ -223,15 +270,15 @@ Future<void> onStart(ServiceInstance service) async {
     if (DateTime.now().difference(lastFixAt).inSeconds >= 3) {
       currentSpeedKmh = 0.0;
     }
-    // Accrue moving time once per tick while above the stop threshold — the
-    // decay above means a stationary rider stops counting after ~3 s.
-    if (currentSpeedKmh > _kMovingSpeedThresholdKmh) {
+    // Accrue moving time once per tick while above the stop threshold — but not
+    // while paused (paused time is excluded from every stat).
+    if (!paused && currentSpeedKmh > _kMovingSpeedThresholdKmh) {
       movingSeconds++;
     }
     emitTelemetry();
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
-        title: 'RollingBike — recording',
+        title: paused ? 'RollingBike — paused' : 'RollingBike — recording',
         content: '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
             '${_formatDuration(elapsedSeconds())}',
       );
@@ -243,19 +290,63 @@ Future<void> onStart(ServiceInstance service) async {
     distanceFilter: 5, // meters; suppress jitter while stationary
   );
 
-  positionSub =
-      Geolocator.getPositionStream(locationSettings: settings).listen((pos) async {
+  // Wrapped in a function so resume can restart it after pause cancels it.
+  void startPositionStream() {
+    positionSub =
+        Geolocator.getPositionStream(locationSettings: settings).listen((pos) async {
+      // Accuracy gate: ignore junk fixes outright, keeping the last good anchor.
+      if (pos.accuracy.isFinite && pos.accuracy > _kMaxAccuracyMeters) return;
+
+    final now = DateTime.now();
+
+    // Distance and displacement-derived speed relative to the last accepted fix.
+    double? segMeters;
+    double? displacementSpeedKmh;
     if (lastLat != null && lastLon != null) {
-      totalDistanceMeters +=
+      segMeters =
           haversineMeters(lastLat!, lastLon!, pos.latitude, pos.longitude);
+      final dtSeconds = now.difference(lastFixAt).inMilliseconds / 1000.0;
+      if (dtSeconds > 0) displacementSpeedKmh = (segMeters / dtSeconds) * 3.6;
     }
+
+    // Impossible-jump gate: a segment implying a wild speed is GPS drift, not
+    // real movement — drop it so it can't inflate distance/max. But if we drop
+    // too many in a row the anchor itself is probably stale, so re-anchor to
+    // this fix (without counting the bogus segment) and carry on.
+    if (displacementSpeedKmh != null &&
+        displacementSpeedKmh > _kMaxPlausibleSpeedKmh) {
+      rejectedStreak++;
+      if (rejectedStreak <= _kMaxRejectStreak) return;
+      lastLat = pos.latitude;
+      lastLon = pos.longitude;
+      lastFixAt = now;
+      rejectedStreak = 0;
+      return;
+    }
+    rejectedStreak = 0;
+
+    // Accepted fix: accumulate distance and advance the anchor.
+    if (segMeters != null) totalDistanceMeters += segMeters;
     lastLat = pos.latitude;
     lastLon = pos.longitude;
-    lastFixAt = DateTime.now();
+    lastFixAt = now;
 
-    final rawSpeed = (pos.speed.isFinite && pos.speed > 0) ? pos.speed : 0.0;
-    currentSpeedKmh = rawSpeed * 3.6;
-    if (currentSpeedKmh > maxSpeedKmh) maxSpeedKmh = currentSpeedKmh;
+    // Prefer the GPS Doppler speed when the device actually reports one, else
+    // fall back to the displacement speed. Crucially we never overwrite a good
+    // reading with the spurious 0 the fused provider emits on alternating fixes
+    // — that was the "15 → 0 → 16 → 0" flicker.
+    final gpsSpeedKmh =
+        (pos.speed.isFinite && pos.speed > 0) ? pos.speed * 3.6 : null;
+    final measuredKmh = gpsSpeedKmh ?? displacementSpeedKmh;
+    if (measuredKmh != null) {
+      // Light EMA to tame noise; take the sample as-is when we were at rest so
+      // speed picks up immediately after a stop instead of easing in.
+      currentSpeedKmh = currentSpeedKmh <= 0
+          ? measuredKmh
+          : currentSpeedKmh * (1 - _kSpeedSmoothing) +
+              measuredKmh * _kSpeedSmoothing;
+      if (currentSpeedKmh > maxSpeedKmh) maxSpeedKmh = currentSpeedKmh;
+    }
 
     await db.addTrackPoint(
       TrackPoint()
@@ -277,6 +368,36 @@ Future<void> onStart(ServiceInstance service) async {
       ..maxSpeedKmh = maxSpeedKmh;
     await db.saveRide(ride);
 
+      emitTelemetry();
+    });
+  }
+
+  startPositionStream();
+
+  // Pause: freeze the clock, stop GPS, and drop the anchor so the distance
+  // covered while paused is not counted when tracking resumes.
+  service.on('pause').listen((_) {
+    if (paused) return;
+    paused = true;
+    pauseStartedAt = DateTime.now();
+    currentSpeedKmh = 0.0;
+    positionSub?.cancel();
+    positionSub = null;
+    lastLat = null;
+    lastLon = null;
+    emitTelemetry();
+  });
+
+  // Resume: bank the paused duration (so it stays excluded) and restart GPS.
+  service.on('resume').listen((_) {
+    if (!paused) return;
+    if (pauseStartedAt != null) {
+      totalPaused += DateTime.now().difference(pauseStartedAt!);
+      pauseStartedAt = null;
+    }
+    paused = false;
+    lastFixAt = DateTime.now();
+    startPositionStream();
     emitTelemetry();
   });
 }
