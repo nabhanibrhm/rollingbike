@@ -59,6 +59,19 @@
             android:exported="false"
             tools:replace="android:exported" />
 
+        <!-- Secure sharing of generated PNGs from the app cache via content:// URIs
+             (scoped-storage compliant). Authority matches MainActivity's
+             "$packageName.fileprovider". -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -74,6 +87,17 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Package visibility (Android 11+) so we can resolve the Instagram
+             Stories share intent; absence just triggers the sharesheet fallback. -->
+        <package android:name="com.instagram.android" />
+        <intent>
+            <action android:name="com.instagram.share.ADD_TO_STORY" />
+        </intent>
+        <!-- Resolve the system share sheet fallback. -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="image/png" />
         </intent>
     </queries>
 </manifest>

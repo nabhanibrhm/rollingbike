@@ -40,6 +40,11 @@ kotlin {
     }
 }
 
+dependencies {
+    // FileProvider for secure content:// sharing of generated PNGs.
+    implementation("androidx.core:core-ktx:1.13.1")
+}
+
 flutter {
     source = "../.."
 }

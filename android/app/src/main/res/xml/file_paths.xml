@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Maps context.cacheDir/share_images/ (path_provider's getTemporaryDirectory
+         on Android is getCacheDir()) so generated share PNGs can be exposed as
+         content:// URIs without touching public storage. -->
+    <cache-path name="share_images" path="share_images/" />
+</paths>

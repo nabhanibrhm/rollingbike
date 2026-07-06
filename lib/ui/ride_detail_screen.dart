@@ -6,12 +6,13 @@ import 'package:latlong2/latlong.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
 import '../providers/history_providers.dart';
+import '../services/instagram_share.dart';
 import '../theme/app_theme.dart';
 import 'tracking_map_screen.dart' show basemapUrl;
 
 /// Detail view for a saved ride: the recorded track replayed as a polyline on
 /// the map, with the full summary stats below.
-class RideDetailScreen extends ConsumerWidget {
+class RideDetailScreen extends ConsumerStatefulWidget {
   const RideDetailScreen({super.key, required this.ride});
 
   final Ride ride;
@@ -19,11 +20,49 @@ class RideDetailScreen extends ConsumerWidget {
   static const LatLng _fallbackCenter = LatLng(-6.2088, 106.8456); // Jakarta
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RideDetailScreen> createState() => _RideDetailScreenState();
+}
+
+class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
+  bool _sharing = false;
+
+  /// Renders the ride card and shares it to Instagram (with a sharesheet
+  /// fallback). Guarded so it only fires once the track has loaded and never
+  /// re-enters while a render/share is in flight.
+  Future<void> _share() async {
+    if (_sharing) return;
+    final points = ref.read(rideTrackProvider(widget.ride.id)).valueOrNull;
+    if (points == null) return; // track still loading — button is disabled
+    setState(() => _sharing = true);
+    try {
+      await InstagramShare.shareRide(
+        context: context,
+        ride: widget.ride,
+        points: points,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      final cx = AppColors.of(context);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            backgroundColor: cx.surface,
+            content: Text("Couldn't share this ride. Try again.",
+                style: TextStyle(color: cx.dangerInk)),
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cx = AppColors.of(context);
-    final trackAsync = ref.watch(rideTrackProvider(ride.id));
-    final title = ride.name?.trim().isNotEmpty == true
-        ? ride.name!.trim()
+    final trackAsync = ref.watch(rideTrackProvider(widget.ride.id));
+    final title = widget.ride.name?.trim().isNotEmpty == true
+        ? widget.ride.name!.trim()
         : 'Untitled ride';
 
     return Scaffold(
@@ -33,6 +72,26 @@ class RideDetailScreen extends ConsumerWidget {
         foregroundColor: cx.textBright,
         elevation: 0,
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        actions: [
+          if (_sharing)
+            Padding(
+              padding: const EdgeInsets.only(right: 18),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.2, color: cx.accentInk),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Share to Instagram',
+              onPressed: trackAsync.hasValue ? _share : null,
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -51,7 +110,7 @@ class RideDetailScreen extends ConsumerWidget {
               data: (points) => _RouteMap(points: points),
             ),
           ),
-          _SummaryPanel(ride: ride),
+          _SummaryPanel(ride: widget.ride),
         ],
       ),
     );
