@@ -7,9 +7,10 @@ import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
 import '../providers/history_providers.dart';
 import '../theme/app_theme.dart';
+import 'tracking_map_screen.dart' show basemapUrl;
 
 /// Detail view for a saved ride: the recorded track replayed as a polyline on
-/// the dark map, with the full summary stats below.
+/// the map, with the full summary stats below.
 class RideDetailScreen extends ConsumerWidget {
   const RideDetailScreen({super.key, required this.ride});
 
@@ -19,16 +20,17 @@ class RideDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cx = AppColors.of(context);
     final trackAsync = ref.watch(rideTrackProvider(ride.id));
     final title = ride.name?.trim().isNotEmpty == true
         ? ride.name!.trim()
         : 'Untitled ride';
 
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: cx.canvas,
       appBar: AppBar(
-        backgroundColor: AppColors.black,
-        foregroundColor: AppColors.textBright,
+        backgroundColor: cx.canvas,
+        foregroundColor: cx.textBright,
         elevation: 0,
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
@@ -36,14 +38,14 @@ class RideDetailScreen extends ConsumerWidget {
         children: [
           Expanded(
             child: trackAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.cyan),
+              loading: () => Center(
+                child: CircularProgressIndicator(color: cx.accentInk),
               ),
               error: (e, _) => Center(
                 child: Text(
                   'Could not load track:\n$e',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppColors.danger),
+                  style: TextStyle(color: cx.dangerInk),
                 ),
               ),
               data: (points) => _RouteMap(points: points),
@@ -56,7 +58,7 @@ class RideDetailScreen extends ConsumerWidget {
   }
 }
 
-/// The dark map with the recorded route + start/end markers. Falls back to a
+/// The map with the recorded route + start/end markers. Falls back to a
 /// message when the ride has no recorded fixes.
 class _RouteMap extends StatelessWidget {
   const _RouteMap({required this.points});
@@ -65,6 +67,7 @@ class _RouteMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     final route = [for (final p in points) LatLng(p.latitude, p.longitude)];
 
     if (route.isEmpty) {
@@ -72,11 +75,11 @@ class _RouteMap extends StatelessWidget {
         children: [
           const _BaseMap(center: RideDetailScreen._fallbackCenter),
           Container(
-            color: Colors.black.withValues(alpha: 0.5),
+            color: cx.canvas.withValues(alpha: 0.5),
             alignment: Alignment.center,
-            child: const Text(
+            child: Text(
               'No track recorded for this ride',
-              style: TextStyle(color: AppColors.textDim),
+              style: TextStyle(color: cx.textDim),
             ),
           ),
         ],
@@ -85,7 +88,7 @@ class _RouteMap extends StatelessWidget {
 
     return FlutterMap(
       options: MapOptions(
-        backgroundColor: AppColors.black,
+        backgroundColor: cx.canvas,
         initialCenter: route.first,
         initialZoom: 15,
         // Fit the whole recorded route in view. A single-point ride keeps the
@@ -103,23 +106,22 @@ class _RouteMap extends StatelessWidget {
       ),
       children: [
         TileLayer(
-          urlTemplate:
-              'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          urlTemplate: basemapUrl(cx.isDark),
           subdomains: const ['a', 'b', 'c', 'd'],
           userAgentPackageName: 'id.co.smma.rollingbike',
-          tileProvider: NetworkTileProvider(),
+          tileProvider: NetworkTileProvider(silenceExceptions: true),
         ),
         if (route.length >= 2)
           PolylineLayer(
             polylines: [
-              Polyline(points: route, strokeWidth: 5, color: AppColors.cyan),
+              Polyline(points: route, strokeWidth: 5, color: cx.accentInk),
             ],
           ),
         MarkerLayer(
           markers: [
-            _endpointMarker(route.first, AppColors.volt), // start
+            _endpointMarker(route.first, cx.accent), // start
             if (route.length >= 2)
-              _endpointMarker(route.last, AppColors.danger), // end
+              _endpointMarker(route.last, cx.danger), // end
           ],
         ),
       ],
@@ -155,19 +157,19 @@ class _BaseMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return FlutterMap(
       options: MapOptions(
-        backgroundColor: AppColors.black,
+        backgroundColor: cx.canvas,
         initialCenter: center,
         initialZoom: 12,
       ),
       children: [
         TileLayer(
-          urlTemplate:
-              'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          urlTemplate: basemapUrl(cx.isDark),
           subdomains: const ['a', 'b', 'c', 'd'],
           userAgentPackageName: 'id.co.smma.rollingbike',
-          tileProvider: NetworkTileProvider(),
+          tileProvider: NetworkTileProvider(silenceExceptions: true),
         ),
       ],
     );
@@ -182,11 +184,12 @@ class _SummaryPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(
-        color: AppColors.zinc,
-        border: Border(top: BorderSide(color: AppColors.zincBorder)),
+      decoration: BoxDecoration(
+        color: cx.surface,
+        border: Border(top: BorderSide(color: cx.border)),
       ),
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
       child: SafeArea(
@@ -197,7 +200,7 @@ class _SummaryPanel extends StatelessWidget {
           children: [
             Text(
               _formatDate(ride.startTime),
-              style: const TextStyle(color: AppColors.textDim, fontSize: 12),
+              style: TextStyle(color: cx.textDim, fontSize: 12),
             ),
             const SizedBox(height: 14),
             Row(
@@ -206,19 +209,19 @@ class _SummaryPanel extends StatelessWidget {
               children: [
                 Text(
                   (ride.totalDistanceMeters / 1000).toStringAsFixed(2),
-                  style: const TextStyle(
-                    color: AppColors.volt,
+                  style: TextStyle(
+                    color: cx.accentInk,
                     fontSize: 44,
                     height: 1,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(width: 6),
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 6),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
                   child: Text(
                     'km',
-                    style: TextStyle(color: AppColors.textDim, fontSize: 16),
+                    style: TextStyle(color: cx.textDim, fontSize: 16),
                   ),
                 ),
               ],
@@ -248,7 +251,7 @@ class _SummaryPanel extends StatelessWidget {
                   label: 'MAX SPEED',
                   value: ride.maxSpeedKmh.toStringAsFixed(1),
                   unit: 'km/h',
-                  color: AppColors.volt,
+                  color: cx.danger,
                 ),
               ],
             ),
@@ -264,23 +267,24 @@ class _Stat extends StatelessWidget {
     required this.label,
     required this.value,
     this.unit = '',
-    this.color = AppColors.cyan,
+    this.color,
   });
 
   final String label;
   final String value;
   final String unit;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: const TextStyle(color: AppColors.textDim, fontSize: 11),
+            style: TextStyle(color: cx.textDim, fontSize: 11),
           ),
           const SizedBox(height: 6),
           Row(
@@ -290,7 +294,7 @@ class _Stat extends StatelessWidget {
               Text(
                 value,
                 style: TextStyle(
-                  color: color,
+                  color: color ?? cx.accentInk,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                 ),
@@ -299,10 +303,7 @@ class _Stat extends StatelessWidget {
                 const SizedBox(width: 4),
                 Text(
                   unit,
-                  style: const TextStyle(
-                    color: AppColors.textDim,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: cx.textDim, fontSize: 12),
                 ),
               ],
             ],

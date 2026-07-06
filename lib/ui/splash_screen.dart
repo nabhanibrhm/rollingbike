@@ -63,8 +63,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: cx.canvas,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -76,13 +77,13 @@ class _SplashScreenState extends State<SplashScreen>
                 return Text(
                   'RollingBike',
                   style: TextStyle(
-                    color: AppColors.cyan,
+                    color: cx.accentInk,
                     fontSize: 40,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1,
                     shadows: [
                       BoxShadow(
-                        color: AppColors.cyan.withValues(alpha: 0.35 + 0.4 * t),
+                        color: cx.accentInk.withValues(alpha: 0.35 + 0.4 * t),
                         blurRadius: 16 + 20 * t,
                       ),
                     ],
@@ -94,7 +95,7 @@ class _SplashScreenState extends State<SplashScreen>
             Text(
               'OFFLINE TELEMETRY',
               style: TextStyle(
-                color: AppColors.textDim,
+                color: cx.textDim,
                 fontSize: 12,
                 letterSpacing: 4,
                 fontWeight: FontWeight.w500,
@@ -102,12 +103,12 @@ class _SplashScreenState extends State<SplashScreen>
             ),
             const SizedBox(height: 44),
             if (_error == null)
-              const SizedBox(
+              SizedBox(
                 width: 26,
                 height: 26,
                 child: CircularProgressIndicator(
                   strokeWidth: 2.4,
-                  color: AppColors.volt,
+                  color: cx.accentInk,
                 ),
               )
             else
@@ -127,13 +128,14 @@ class _ErrorRetry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
         children: [
-          const Text(
+          Text(
             'Startup failed',
-            style: TextStyle(color: AppColors.danger, fontSize: 14),
+            style: TextStyle(color: cx.dangerInk, fontSize: 14),
           ),
           const SizedBox(height: 6),
           Text(
@@ -141,14 +143,14 @@ class _ErrorRetry extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppColors.textDim, fontSize: 12),
+            style: TextStyle(color: cx.textDim, fontSize: 12),
           ),
           const SizedBox(height: 16),
           OutlinedButton(
             onPressed: onRetry,
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.cyan,
-              side: const BorderSide(color: AppColors.cyan),
+              foregroundColor: cx.accentInk,
+              side: BorderSide(color: cx.accentInk),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),

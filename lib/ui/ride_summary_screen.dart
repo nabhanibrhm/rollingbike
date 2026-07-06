@@ -49,26 +49,25 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
   }
 
   Future<bool> _confirmDiscard() async {
+    final cx = AppColors.of(context);
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.zinc,
-        title: const Text('Discard ride?',
-            style: TextStyle(color: AppColors.textBright)),
-        content: const Text(
+        backgroundColor: cx.surface,
+        title: Text('Discard ride?',
+            style: TextStyle(color: cx.textBright)),
+        content: Text(
           'This permanently deletes the ride and its recorded track.',
-          style: TextStyle(color: AppColors.textDim),
+          style: TextStyle(color: cx.textDim),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textDim)),
+            child: Text('Cancel', style: TextStyle(color: cx.textDim)),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Discard',
-                style: TextStyle(color: AppColors.danger)),
+            child: Text('Discard', style: TextStyle(color: cx.dangerInk)),
           ),
         ],
       ),
@@ -78,6 +77,7 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     final t = widget.telemetry;
     return PopScope(
       // Backing out keeps the (already-saved) ride, unnamed.
@@ -86,17 +86,17 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
         if (didPop) ref.read(trackingControllerProvider.notifier).keepFinishedRide();
       },
       child: Scaffold(
-        backgroundColor: AppColors.black,
+        backgroundColor: cx.canvas,
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
+                Text(
                   'RIDE COMPLETE',
                   style: TextStyle(
-                    color: AppColors.cyan,
+                    color: cx.accentInk,
                     fontSize: 14,
                     letterSpacing: 3,
                     fontWeight: FontWeight.w700,
@@ -110,19 +110,18 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                   children: [
                     Text(
                       (t.distanceMeters / 1000).toStringAsFixed(2),
-                      style: const TextStyle(
-                        color: AppColors.volt,
+                      style: TextStyle(
+                        color: cx.accentInk,
                         fontSize: 64,
                         height: 1,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Text('km',
-                          style: TextStyle(
-                              color: AppColors.textDim, fontSize: 20)),
+                          style: TextStyle(color: cx.textDim, fontSize: 20)),
                     ),
                   ],
                 ),
@@ -148,7 +147,7 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                         label: 'MAX SPEED',
                         value: t.maxSpeedKmh.toStringAsFixed(1),
                         unit: 'km/h',
-                        color: AppColors.volt),
+                        color: cx.danger),
                   ],
                 ),
                 const Spacer(),
@@ -156,19 +155,19 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                   controller: _nameController,
                   enabled: !_busy,
                   textCapitalization: TextCapitalization.sentences,
-                  style: const TextStyle(color: AppColors.textBright),
+                  style: TextStyle(color: cx.textBright),
                   decoration: InputDecoration(
                     hintText: 'Name this ride (e.g. Morning commute)',
-                    hintStyle: const TextStyle(color: AppColors.textDim),
+                    hintStyle: TextStyle(color: cx.textDim),
                     filled: true,
-                    fillColor: AppColors.zinc,
+                    fillColor: cx.surface,
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.zincBorder),
+                      borderSide: BorderSide(color: cx.border),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.cyan),
+                      borderSide: BorderSide(color: cx.accentInk),
                     ),
                   ),
                 ),
@@ -178,8 +177,8 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                   child: ElevatedButton(
                     onPressed: _busy ? null : _save,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.volt,
-                      foregroundColor: Colors.black,
+                      backgroundColor: cx.accent,
+                      foregroundColor: cx.onAccent,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
@@ -195,8 +194,8 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                   child: OutlinedButton(
                     onPressed: _busy ? null : _discard,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: const BorderSide(color: AppColors.danger),
+                      foregroundColor: cx.dangerInk,
+                      side: BorderSide(color: cx.dangerInk),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                     ),
@@ -229,22 +228,23 @@ class _SummaryStat extends StatelessWidget {
     required this.label,
     required this.value,
     this.unit = '',
-    this.color = AppColors.cyan,
+    this.color,
   });
 
   final String label;
   final String value;
   final String unit;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(color: AppColors.textDim, fontSize: 11)),
+              style: TextStyle(color: cx.textDim, fontSize: 11)),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -252,12 +252,13 @@ class _SummaryStat extends StatelessWidget {
             children: [
               Text(value,
                   style: TextStyle(
-                      color: color, fontSize: 26, fontWeight: FontWeight.w700)),
+                      color: color ?? cx.accentInk,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700)),
               if (unit.isNotEmpty) ...[
                 const SizedBox(width: 4),
                 Text(unit,
-                    style:
-                        const TextStyle(color: AppColors.textDim, fontSize: 12)),
+                    style: TextStyle(color: cx.textDim, fontSize: 12)),
               ],
             ],
           ),

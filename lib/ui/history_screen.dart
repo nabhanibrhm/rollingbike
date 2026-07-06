@@ -15,13 +15,14 @@ class HistoryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cx = AppColors.of(context);
     final ridesAsync = ref.watch(rideHistoryProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: cx.canvas,
       appBar: AppBar(
-        backgroundColor: AppColors.black,
-        foregroundColor: AppColors.textBright,
+        backgroundColor: cx.canvas,
+        foregroundColor: cx.textBright,
         elevation: 0,
         title: const Text(
           'RIDE HISTORY',
@@ -29,14 +30,14 @@ class HistoryScreen extends ConsumerWidget {
         ),
       ),
       body: ridesAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.cyan),
+        loading: () => Center(
+          child: CircularProgressIndicator(color: cx.accentInk),
         ),
         error: (e, _) => Center(
           child: Text(
             'Could not load rides:\n$e',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.danger),
+            style: TextStyle(color: cx.dangerInk),
           ),
         ),
         data: (rides) {
@@ -69,20 +70,21 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final cx = AppColors.of(context);
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.two_wheeler, color: AppColors.textDim, size: 56),
-          SizedBox(height: 16),
+          Icon(Icons.two_wheeler, color: cx.textDim, size: 56),
+          const SizedBox(height: 16),
           Text(
             'No rides yet',
-            style: TextStyle(color: AppColors.textBright, fontSize: 18),
+            style: TextStyle(color: cx.textBright, fontSize: 18),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
             'Your saved rides will show up here.',
-            style: TextStyle(color: AppColors.textDim, fontSize: 13),
+            style: TextStyle(color: cx.textDim, fontSize: 13),
           ),
         ],
       ),
@@ -103,6 +105,7 @@ class _RideCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Dismissible(
       key: ValueKey(ride.id),
       direction: DismissDirection.endToStart,
@@ -112,13 +115,13 @@ class _RideCard extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 24),
         decoration: BoxDecoration(
-          color: AppColors.danger.withValues(alpha: 0.18),
+          color: cx.danger.withValues(alpha: 0.18),
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const Icon(Icons.delete_outline, color: AppColors.danger),
+        child: Icon(Icons.delete_outline, color: cx.dangerInk),
       ),
       child: Material(
-        color: AppColors.zinc,
+        color: cx.surface,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onTap,
@@ -127,7 +130,7 @@ class _RideCard extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.zincBorder),
+              border: Border.all(color: cx.border),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,8 +143,8 @@ class _RideCard extends StatelessWidget {
                         ride.name?.trim().isNotEmpty == true
                             ? ride.name!.trim()
                             : 'Untitled ride',
-                        style: const TextStyle(
-                          color: AppColors.textBright,
+                        style: TextStyle(
+                          color: cx.textBright,
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
@@ -150,8 +153,8 @@ class _RideCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       '${(ride.totalDistanceMeters / 1000).toStringAsFixed(2)} km',
-                      style: const TextStyle(
-                        color: AppColors.volt,
+                      style: TextStyle(
+                        color: cx.accentInk,
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
                       ),
@@ -161,8 +164,8 @@ class _RideCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   _formatDate(ride.startTime),
-                  style: const TextStyle(
-                    color: AppColors.textDim,
+                  style: TextStyle(
+                    color: cx.textDim,
                     fontSize: 12,
                   ),
                 ),
@@ -186,6 +189,7 @@ class _RideCard extends StatelessWidget {
                       label: 'MAX',
                       value: ride.maxSpeedKmh.toStringAsFixed(0),
                       unit: 'km/h',
+                      color: cx.danger,
                     ),
                   ],
                 ),
@@ -198,31 +202,32 @@ class _RideCard extends StatelessWidget {
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
+    final cx = AppColors.of(context);
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.zinc,
-        title: const Text(
+        backgroundColor: cx.surface,
+        title: Text(
           'Delete ride?',
-          style: TextStyle(color: AppColors.textBright),
+          style: TextStyle(color: cx.textBright),
         ),
-        content: const Text(
+        content: Text(
           'This permanently removes the ride and its track.',
-          style: TextStyle(color: AppColors.textDim),
+          style: TextStyle(color: cx.textDim),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: AppColors.textDim),
+              style: TextStyle(color: cx.textDim),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text(
+            child: Text(
               'Delete',
-              style: TextStyle(color: AppColors.danger),
+              style: TextStyle(color: cx.dangerInk),
             ),
           ),
         ],
@@ -233,28 +238,35 @@ class _RideCard extends StatelessWidget {
 }
 
 class _MiniStat extends StatelessWidget {
-  const _MiniStat({required this.label, required this.value, this.unit = ''});
+  const _MiniStat({
+    required this.label,
+    required this.value,
+    this.unit = '',
+    this.color,
+  });
 
   final String label;
   final String value;
   final String unit;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: const TextStyle(color: AppColors.textDim, fontSize: 10),
+            style: TextStyle(color: cx.textDim, fontSize: 10),
           ),
           const SizedBox(height: 4),
           RichText(
             text: TextSpan(
               text: value,
-              style: const TextStyle(
-                color: AppColors.cyan,
+              style: TextStyle(
+                color: color ?? cx.accentInk,
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
               ),
@@ -262,8 +274,8 @@ class _MiniStat extends StatelessWidget {
                 if (unit.isNotEmpty)
                   TextSpan(
                     text: ' $unit',
-                    style: const TextStyle(
-                      color: AppColors.textDim,
+                    style: TextStyle(
+                      color: cx.textDim,
                       fontSize: 10,
                       fontWeight: FontWeight.w400,
                     ),

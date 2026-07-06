@@ -7,13 +7,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../providers/settings_providers.dart';
 import '../providers/tracking_providers.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
 import 'history_screen.dart';
 import 'ride_summary_screen.dart';
 
-/// Full-screen dark map with a floating glassmorphic telemetry sheet — the
+/// CartoDB basemap URL for the given brightness — dark tiles on the dark theme,
+/// light tiles on the light theme.
+String basemapUrl(bool isDark) => isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+
+/// Full-screen map with a floating glassmorphic telemetry sheet — the
 /// Gowez-style tracking screen.
 class TrackingMapScreen extends ConsumerStatefulWidget {
   const TrackingMapScreen({super.key});
@@ -65,18 +72,20 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
   }
 
   void _showError(String message) {
+    final cx = AppColors.of(context);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          backgroundColor: AppColors.zinc,
-          content: Text(message, style: const TextStyle(color: AppColors.danger)),
+          backgroundColor: cx.surface,
+          content: Text(message, style: TextStyle(color: cx.dangerInk)),
         ),
       );
   }
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     final state = ref.watch(trackingControllerProvider);
 
     // Follow the rider, present the post-ride summary, and surface errors.
@@ -99,9 +108,8 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             SnackBar(
-              backgroundColor: AppColors.zinc,
-              content: Text(next.error!,
-                  style: const TextStyle(color: AppColors.danger)),
+              backgroundColor: cx.surface,
+              content: Text(next.error!, style: TextStyle(color: cx.dangerInk)),
             ),
           );
       }
@@ -110,7 +118,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
     final current = _currentLatLng(state);
 
     return Scaffold(
-      backgroundColor: AppColors.black,
+      backgroundColor: cx.canvas,
       drawer: const _AppDrawer(),
       body: Stack(
         children: [
@@ -119,7 +127,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
             options: MapOptions(
               initialCenter: _fallbackCenter,
               initialZoom: 16,
-              backgroundColor: AppColors.black,
+              backgroundColor: cx.canvas,
               onMapReady: () {
                 _mapReady = true;
                 // Center on the rider as soon as the map can accept moves.
@@ -128,14 +136,12 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                urlTemplate: basemapUrl(cx.isDark),
                 subdomains: const ['a', 'b', 'c', 'd'],
                 userAgentPackageName: 'id.co.smma.rollingbike',
                 // Offline-first: swallow fetch failures (no error spam / red
                 // tiles when there's no signal) and serve from the persistent
-                // disk cache configured in TileCacheService. Previously-seen
-                // areas keep rendering with zero network.
+                // disk cache configured in TileCacheService.
                 tileProvider: NetworkTileProvider(silenceExceptions: true),
               ),
               if (state.route.length >= 2)
@@ -144,7 +150,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                     Polyline(
                       points: state.route,
                       strokeWidth: 5,
-                      color: AppColors.cyan,
+                      color: cx.accentInk,
                     ),
                   ],
                 ),
@@ -202,20 +208,21 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
   }
 }
 
-/// Glowing cyan position marker.
+/// Glowing accent position marker.
 class _RiderDot extends StatelessWidget {
   const _RiderDot();
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.cyan,
+        color: cx.accent,
         shape: BoxShape.circle,
         border: Border.all(color: Colors.black, width: 3),
         boxShadow: [
           BoxShadow(
-            color: AppColors.cyan.withValues(alpha: 0.6),
+            color: cx.accent.withValues(alpha: 0.6),
             blurRadius: 12,
             spreadRadius: 2,
           ),
@@ -231,16 +238,17 @@ class _MapAttribution extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Positioned(
       top: 8,
       right: 8,
       child: SafeArea(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          color: Colors.black.withValues(alpha: 0.4),
-          child: const Text(
+          color: cx.canvas.withValues(alpha: 0.5),
+          child: Text(
             '© OpenStreetMap · CARTO',
-            style: TextStyle(color: AppColors.textDim, fontSize: 9),
+            style: TextStyle(color: cx.textDim, fontSize: 9),
           ),
         ),
       ),
@@ -255,6 +263,7 @@ class _MenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Positioned(
       top: 8,
       left: 8,
@@ -265,7 +274,7 @@ class _MenuButton extends StatelessWidget {
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
               child: Material(
-                color: AppColors.zinc.withValues(alpha: 0.6),
+                color: cx.surface.withValues(alpha: 0.6),
                 child: InkWell(
                   onTap: () => Scaffold.of(context).openDrawer(),
                   child: Container(
@@ -275,9 +284,9 @@ class _MenuButton extends StatelessWidget {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                          color: AppColors.cyan.withValues(alpha: 0.22)),
+                          color: cx.accentInk.withValues(alpha: 0.3)),
                     ),
-                    child: const Icon(Icons.menu, color: AppColors.textBright),
+                    child: Icon(Icons.menu, color: cx.textBright),
                   ),
                 ),
               ),
@@ -299,12 +308,13 @@ class _LocateButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Material(
-          color: AppColors.zinc.withValues(alpha: 0.72),
+          color: cx.surface.withValues(alpha: 0.72),
           child: InkWell(
             onTap: busy ? null : onTap,
             child: Container(
@@ -314,16 +324,16 @@ class _LocateButton extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border:
-                    Border.all(color: AppColors.cyan.withValues(alpha: 0.3)),
+                    Border.all(color: cx.accentInk.withValues(alpha: 0.35)),
               ),
               child: busy
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2.4, color: AppColors.cyan),
+                          strokeWidth: 2.4, color: cx.accentInk),
                     )
-                  : const Icon(Icons.my_location, color: AppColors.cyan),
+                  : Icon(Icons.my_location, color: cx.accentInk),
             ),
           ),
         ),
@@ -332,35 +342,51 @@ class _LocateButton extends StatelessWidget {
   }
 }
 
-/// Side menu: ride history + exit.
-class _AppDrawer extends StatelessWidget {
+/// Side menu: theme toggle, ride history + exit.
+class _AppDrawer extends ConsumerWidget {
   const _AppDrawer();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cx = AppColors.of(context);
+    final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
     return Drawer(
-      backgroundColor: AppColors.zinc,
+      backgroundColor: cx.surface,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 24, 20, 20),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
               child: Text(
                 'RollingBike',
                 style: TextStyle(
-                  color: AppColors.cyan,
+                  color: cx.accentInk,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1,
                 ),
               ),
             ),
-            const Divider(color: AppColors.zincBorder, height: 1),
+            Divider(color: cx.border, height: 1),
+            SwitchListTile(
+              secondary: Icon(
+                isDark ? Icons.dark_mode : Icons.light_mode,
+                color: cx.textBright,
+              ),
+              title: Text('Dark mode',
+                  style: TextStyle(color: cx.textBright)),
+              value: isDark,
+              activeThumbColor: cx.onAccent,
+              activeTrackColor: cx.accent,
+              onChanged: (_) =>
+                  ref.read(themeModeProvider.notifier).toggle(),
+            ),
+            Divider(color: cx.border, height: 1),
             ListTile(
-              leading: const Icon(Icons.history, color: AppColors.textBright),
-              title: const Text('History of trips',
-                  style: TextStyle(color: AppColors.textBright)),
+              leading: Icon(Icons.history, color: cx.textBright),
+              title: Text('History of trips',
+                  style: TextStyle(color: cx.textBright)),
               onTap: () {
                 Navigator.of(context).pop(); // close drawer
                 Navigator.of(context).push(
@@ -369,10 +395,9 @@ class _AppDrawer extends StatelessWidget {
               },
             ),
             ListTile(
-              leading:
-                  const Icon(Icons.exit_to_app, color: AppColors.textBright),
-              title: const Text('Exit',
-                  style: TextStyle(color: AppColors.textBright)),
+              leading: Icon(Icons.exit_to_app, color: cx.textBright),
+              title:
+                  Text('Exit', style: TextStyle(color: cx.textBright)),
               onTap: () => SystemNavigator.pop(),
             ),
           ],
@@ -401,6 +426,7 @@ class _TelemetrySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     final tracking = state.isTracking;
     final paused = state.isPaused;
     // While tracking, show live telemetry; when stopped, show the last ride's
@@ -415,10 +441,10 @@ class _TelemetrySheet extends StatelessWidget {
         child: Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            color: AppColors.zinc.withValues(alpha: 0.72),
+            color: cx.surface.withValues(alpha: 0.72),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
             border: Border(
-              top: BorderSide(color: AppColors.cyan.withValues(alpha: 0.22)),
+              top: BorderSide(color: cx.accentInk.withValues(alpha: 0.3)),
             ),
           ),
           padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
@@ -431,7 +457,7 @@ class _TelemetrySheet extends StatelessWidget {
                   width: 44,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.zincBorder,
+                    color: cx.border,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -444,19 +470,19 @@ class _TelemetrySheet extends StatelessWidget {
                   children: [
                     Text(
                       speedKmh.toStringAsFixed(0),
-                      style: const TextStyle(
-                        color: AppColors.volt,
+                      style: TextStyle(
+                        color: cx.accentInk,
                         fontSize: 72,
                         height: 1,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 10),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
                       child: Text('km/h',
-                          style: TextStyle(
-                              color: AppColors.textDim, fontSize: 18)),
+                          style:
+                              TextStyle(color: cx.textDim, fontSize: 18)),
                     ),
                   ],
                 ),
@@ -466,15 +492,15 @@ class _TelemetrySheet extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 5),
                     decoration: BoxDecoration(
-                      color: AppColors.cyan.withValues(alpha: 0.15),
+                      color: cx.accent.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                          color: AppColors.cyan.withValues(alpha: 0.5)),
+                          color: cx.accentInk.withValues(alpha: 0.6)),
                     ),
-                    child: const Text(
+                    child: Text(
                       'PAUSED',
                       style: TextStyle(
-                          color: AppColors.cyan,
+                          color: cx.accentInk,
                           fontSize: 12,
                           letterSpacing: 2,
                           fontWeight: FontWeight.w700),
@@ -501,14 +527,14 @@ class _TelemetrySheet extends StatelessWidget {
                         label: 'MAX',
                         value: (t?.maxSpeedKmh ?? 0).toStringAsFixed(1),
                         unit: 'km/h',
-                        color: AppColors.volt),
+                        color: cx.danger),
                   ],
                 ),
                 const SizedBox(height: 22),
                 if (!tracking)
                   _SheetButton(
                     label: 'START RIDE',
-                    color: AppColors.volt,
+                    color: cx.accent,
                     onPressed: onStart,
                   )
                 else
@@ -518,7 +544,7 @@ class _TelemetrySheet extends StatelessWidget {
                       Expanded(
                         child: _SheetButton(
                           label: paused ? 'RESUME' : 'PAUSE',
-                          color: paused ? AppColors.volt : AppColors.cyan,
+                          color: cx.accent,
                           onPressed: paused ? onResume : onPause,
                         ),
                       ),
@@ -526,7 +552,7 @@ class _TelemetrySheet extends StatelessWidget {
                       Expanded(
                         child: _SheetButton(
                           label: 'STOP',
-                          color: AppColors.danger,
+                          color: cx.danger,
                           onPressed: onStop,
                         ),
                       ),
@@ -551,7 +577,7 @@ class _TelemetrySheet extends StatelessWidget {
 }
 
 /// Large pill button used in the telemetry sheet (start / pause / resume /
-/// stop). Black label on a solid neon fill.
+/// stop). Dark label on a solid accent fill.
 class _SheetButton extends StatelessWidget {
   const _SheetButton({
     required this.label,
@@ -565,13 +591,14 @@ class _SheetButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return SizedBox(
       height: 68,
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
-          foregroundColor: Colors.black,
+          foregroundColor: cx.onAccent,
           elevation: 0,
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16)),
@@ -590,28 +617,31 @@ class _Metric extends StatelessWidget {
     required this.label,
     required this.value,
     required this.unit,
-    this.color = AppColors.cyan,
+    this.color,
   });
 
   final String label;
   final String value;
   final String unit;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
     return Expanded(
       child: Column(
         children: [
           Text(label,
-              style: const TextStyle(color: AppColors.textDim, fontSize: 11)),
+              style: TextStyle(color: cx.textDim, fontSize: 11)),
           const SizedBox(height: 6),
           Text(value,
               style: TextStyle(
-                  color: color, fontSize: 20, fontWeight: FontWeight.w700)),
+                  color: color ?? cx.accentInk,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700)),
           if (unit.isNotEmpty)
             Text(unit,
-                style: const TextStyle(color: AppColors.textDim, fontSize: 10)),
+                style: TextStyle(color: cx.textDim, fontSize: 10)),
         ],
       ),
     );
