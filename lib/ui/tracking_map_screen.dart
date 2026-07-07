@@ -9,7 +9,9 @@ import 'package:latlong2/latlong.dart';
 
 import '../providers/settings_providers.dart';
 import '../providers/tracking_providers.dart';
+import '../services/location_source.dart';
 import '../services/permission_service.dart';
+import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import 'history_screen.dart';
 import 'ride_summary_screen.dart';
@@ -69,6 +71,63 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
     } finally {
       if (mounted) setState(() => _locating = false);
     }
+  }
+
+  /// Record tap: let the rider pick which GPS pipeline to record with (a
+  /// temporary A/B test), persist the choice so the background isolate reads it,
+  /// then start. Cancelling the picker aborts the start.
+  Future<void> _startRide() async {
+    final current = await SettingsService.instance.loadGpsSource();
+    if (!mounted) return;
+    final chosen = await _showGpsSourcePicker(current);
+    if (chosen == null || !mounted) return;
+    await SettingsService.instance.saveGpsSource(chosen);
+    if (!mounted) return;
+    ref.read(trackingControllerProvider.notifier).start();
+  }
+
+  Future<LocationSourceKind?> _showGpsSourcePicker(
+      LocationSourceKind current) {
+    final cx = AppColors.of(context);
+    const descriptions = {
+      LocationSourceKind.fused: 'Google fused provider · 5 m filter (original)',
+      LocationSourceKind.raw: 'Raw GNSS · 1 s cadence · every fix',
+    };
+    return showDialog<LocationSourceKind>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cx.surface,
+        title: Text('GPS source (test)',
+            style: TextStyle(color: cx.textBright, fontSize: 18)),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final kind in LocationSourceKind.values)
+              ListTile(
+                onTap: () => Navigator.of(ctx).pop(kind),
+                leading: Icon(
+                  kind == current
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: kind == current ? cx.accentInk : cx.textDim,
+                ),
+                title: Text(kind.label,
+                    style: TextStyle(
+                        color: cx.textBright, fontWeight: FontWeight.w600)),
+                subtitle: Text(descriptions[kind]!,
+                    style: TextStyle(color: cx.textDim, fontSize: 12)),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: cx.textDim)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showError(String message) {
@@ -183,8 +242,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                 ),
                 _TelemetrySheet(
                   state: state,
-                  onStart: () =>
-                      ref.read(trackingControllerProvider.notifier).start(),
+                  onStart: _startRide,
                   onStop: () =>
                       ref.read(trackingControllerProvider.notifier).stop(),
                   onPause: () =>
@@ -433,6 +491,9 @@ class _TelemetrySheet extends StatelessWidget {
     // finalised summary if present.
     final t = tracking ? state.telemetry : (state.lastFinished ?? state.telemetry);
     final speedKmh = (tracking && !paused) ? (t?.speedKmh ?? 0) : 0.0;
+    // Cold start: recording but no GPS fix yet — show "acquiring" rather than a
+    // misleading 0 km/h.
+    final acquiring = tracking && !paused && !(t?.hasFix ?? false);
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -469,9 +530,9 @@ class _TelemetrySheet extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      speedKmh.toStringAsFixed(0),
+                      acquiring ? '--' : speedKmh.toStringAsFixed(0),
                       style: TextStyle(
-                        color: cx.accentInk,
+                        color: acquiring ? cx.textDim : cx.accentInk,
                         fontSize: 72,
                         height: 1,
                         fontWeight: FontWeight.w700,
@@ -501,6 +562,26 @@ class _TelemetrySheet extends StatelessWidget {
                       'PAUSED',
                       style: TextStyle(
                           color: cx.accentInk,
+                          fontSize: 12,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ] else if (acquiring) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: cx.textDim.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border:
+                          Border.all(color: cx.textDim.withValues(alpha: 0.5)),
+                    ),
+                    child: Text(
+                      'ACQUIRING GPS…',
+                      style: TextStyle(
+                          color: cx.textDim,
                           fontSize: 12,
                           letterSpacing: 2,
                           fontWeight: FontWeight.w700),

@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:ui' show DartPluginRegistrant;
 
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:geolocator/geolocator.dart';
 
 import '../core/geo.dart';
 import '../core/gps_kalman.dart';
 import '../data/database_service.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
+import 'location_source.dart';
+import 'settings_service.dart';
 
 /// Foreground-service notification id (arbitrary, stable across the app).
 const int _kNotificationId = 888;
@@ -36,6 +37,18 @@ const double _kMaxPlausibleSpeedKmh = 220.0;
 /// rejecting every fix if the anchor itself was bad.
 const int _kMaxRejectStreak = 3;
 
+/// Grace period (seconds) since the last accepted fix before the shown speed
+/// starts easing toward zero. Real fixes land roughly 5-6s apart even while
+/// riding normally (per on-device track-point diagnostics), so this must
+/// clear that with margin or the speed readout falsely flashes to zero
+/// mid-ride.
+const double _kSpeedStaleSeconds = 8.0;
+
+/// Once [_kSpeedStaleSeconds] is exceeded without a fresh fix, the shown speed
+/// eases linearly to zero over this many additional seconds instead of
+/// cutting instantly, so a genuine stop doesn't read as a display glitch.
+const double _kSpeedDecaySeconds = 4.0;
+
 /// The telemetry stream ticks at 1 Hz for a smooth on-screen clock, but the
 /// foreground notification does not need per-second updates. Re-posting it every
 /// second causes needless notification churn / log spam and extra wakeups, so we
@@ -57,6 +70,7 @@ class LiveTelemetry {
     required this.movingSeconds,
     required this.pointCount,
     required this.finished,
+    this.hasFix = false,
     this.paused = false,
     this.lat,
     this.lon,
@@ -73,6 +87,10 @@ class LiveTelemetry {
   final int movingSeconds;
   final int pointCount;
   final bool finished;
+
+  /// False until the first GPS fix of the ride is accepted — lets the UI show
+  /// an "acquiring GPS" state instead of a misleading 0 km/h at cold start.
+  final bool hasFix;
 
   /// True while the ride is paused (clock/distance frozen).
   final bool paused;
@@ -91,6 +109,7 @@ class LiveTelemetry {
         movingSeconds: (m['movingSeconds'] as num?)?.toInt() ?? 0,
         pointCount: (m['pointCount'] as num).toInt(),
         finished: (m['finished'] as bool?) ?? false,
+        hasFix: (m['hasFix'] as bool?) ?? false,
         paused: (m['paused'] as bool?) ?? false,
         lat: (m['lat'] as num?)?.toDouble(),
         lon: (m['lon'] as num?)?.toDouble(),
@@ -181,13 +200,24 @@ Future<void> onStart(ServiceInstance service) async {
   final db = DatabaseService.instance;
   await db.open();
 
+  // Which GPS pipeline to record with — chosen in the UI before start and
+  // persisted so this isolate can read it. Temporary A/B switch.
+  final sourceKind = await SettingsService.instance.loadGpsSource();
+  final locationSource = LocationSource.forKind(sourceKind);
+
   final startedAt = DateTime.now();
-  final ride = Ride()..startTime = startedAt;
+  final ride = Ride()
+    ..startTime = startedAt
+    ..gpsSource = sourceKind.tag;
   final rideId = await db.saveRide(ride);
 
   var totalDistanceMeters = 0.0;
   var maxSpeedKmh = 0.0;
   var currentSpeedKmh = 0.0;
+  // Speed at the moment of the last accepted fix — the frozen baseline the
+  // ticker eases down from on a gap, instead of recomputing off a value it
+  // may itself already be decaying.
+  var speedAtLastFix = 0.0;
   var movingSeconds = 0;
   var pointCount = 0;
   var rejectedStreak = 0;
@@ -214,7 +244,7 @@ Future<void> onStart(ServiceInstance service) async {
   var ticksSinceNotify = _kNotificationThrottleSeconds;
   bool? lastNotifiedPaused;
 
-  StreamSubscription<Position>? positionSub;
+  StreamSubscription<GpsFix>? positionSub;
   Timer? ticker;
 
   // Wall-clock since start, minus all paused time (completed + any in-progress
@@ -243,6 +273,9 @@ Future<void> onStart(ServiceInstance service) async {
       'durationSeconds': elapsedSeconds(),
       'movingSeconds': movingSeconds,
       'pointCount': pointCount,
+      // False until the first fix of this ride is accepted, so the UI can show
+      // an "acquiring GPS" state instead of a misleading 0 km/h at cold start.
+      'hasFix': pointCount > 0,
       'finished': false,
       'paused': paused,
       'lat': smoothLat,
@@ -277,6 +310,7 @@ Future<void> onStart(ServiceInstance service) async {
       'durationSeconds': durationSeconds,
       'movingSeconds': movingSeconds,
       'pointCount': pointCount,
+      'hasFix': true,
       'finished': true,
     });
 
@@ -289,9 +323,19 @@ Future<void> onStart(ServiceInstance service) async {
   // while stationary — GPS fixes are gated by the distance filter, so without
   // this the on-screen timer would freeze between fixes.
   ticker = Timer.periodic(const Duration(seconds: 1), (_) async {
-    // Decay the shown speed to zero if no fresh fix has arrived (rider stopped).
-    if (DateTime.now().difference(lastFixAt).inSeconds >= 3) {
-      currentSpeedKmh = 0.0;
+    // Ease the shown speed to zero once fixes stop arriving for a while
+    // (rider stopped — fixes largely cease at a standstill because of the
+    // position stream's distance filter). Skipped while paused: pause/resume
+    // manage currentSpeedKmh directly.
+    if (!paused) {
+      final sinceLastFixS =
+          DateTime.now().difference(lastFixAt).inMilliseconds / 1000.0;
+      if (sinceLastFixS >= _kSpeedStaleSeconds) {
+        final decayFraction =
+            ((sinceLastFixS - _kSpeedStaleSeconds) / _kSpeedDecaySeconds)
+                .clamp(0.0, 1.0);
+        currentSpeedKmh = speedAtLastFix * (1 - decayFraction);
+      }
     }
     // Accrue moving time once per tick while above the stop threshold — but not
     // while paused (paused time is excluded from every stat).
@@ -316,17 +360,16 @@ Future<void> onStart(ServiceInstance service) async {
     }
   });
 
-  final settings = LocationSettings(
-    accuracy: LocationAccuracy.best,
-    distanceFilter: 5, // meters; suppress jitter while stationary
-  );
-
   // Wrapped in a function so resume can restart it after pause cancels it.
+  // The fix source (fused / raw GPS) was chosen above from the persisted A/B
+  // setting; the engine below is identical regardless of which one feeds it.
   void startPositionStream() {
-    positionSub = Geolocator.getPositionStream(locationSettings: settings)
-        .listen((pos) async {
+    positionSub = locationSource.positions().listen((fix) async {
       // Accuracy gate: ignore junk fixes outright, keeping the last good anchor.
-      if (pos.accuracy.isFinite && pos.accuracy > _kMaxAccuracyMeters) return;
+      if (fix.accuracyMeters.isFinite &&
+          fix.accuracyMeters > _kMaxAccuracyMeters) {
+        return;
+      }
 
       final now = DateTime.now();
 
@@ -335,7 +378,7 @@ Future<void> onStart(ServiceInstance service) async {
       double? displacementSpeedKmh;
       if (lastLat != null && lastLon != null) {
         final segMeters =
-            haversineMeters(lastLat!, lastLon!, pos.latitude, pos.longitude);
+            haversineMeters(lastLat!, lastLon!, fix.latitude, fix.longitude);
         final dtSeconds = now.difference(lastFixAt).inMilliseconds / 1000.0;
         if (dtSeconds > 0) displacementSpeedKmh = (segMeters / dtSeconds) * 3.6;
       }
@@ -348,8 +391,8 @@ Future<void> onStart(ServiceInstance service) async {
           displacementSpeedKmh > _kMaxPlausibleSpeedKmh) {
         rejectedStreak++;
         if (rejectedStreak <= _kMaxRejectStreak) return;
-        lastLat = pos.latitude;
-        lastLon = pos.longitude;
+        lastLat = fix.latitude;
+        lastLon = fix.longitude;
         lastFixAt = now;
         kalman.reset();
         smoothLat = null;
@@ -360,24 +403,24 @@ Future<void> onStart(ServiceInstance service) async {
       rejectedStreak = 0;
 
       // Accepted fix: advance the raw anchor.
-      lastLat = pos.latitude;
-      lastLon = pos.longitude;
+      lastLat = fix.latitude;
+      lastLon = fix.longitude;
       lastFixAt = now;
 
       // Feed the Kalman filter. Fuse the Doppler velocity only when moving fast
       // enough for the reported heading to be meaningful.
-      final useDoppler = pos.speed.isFinite &&
-          pos.speed > _kDopplerMinSpeedMps &&
-          pos.heading.isFinite &&
-          pos.heading >= 0;
+      final useDoppler = fix.speedMps.isFinite &&
+          fix.speedMps > _kDopplerMinSpeedMps &&
+          fix.headingDegrees.isFinite &&
+          fix.headingDegrees >= 0;
       kalman.update(
-        lat: pos.latitude,
-        lon: pos.longitude,
-        accuracyMeters: pos.accuracy,
+        lat: fix.latitude,
+        lon: fix.longitude,
+        accuracyMeters: fix.accuracyMeters,
         timeMs: now.millisecondsSinceEpoch.toDouble(),
-        speed: useDoppler ? pos.speed : null,
-        speedAccuracy: pos.speedAccuracy,
-        headingDegrees: useDoppler ? pos.heading : null,
+        speed: useDoppler ? fix.speedMps : null,
+        speedAccuracy: fix.speedAccuracyMps,
+        headingDegrees: useDoppler ? fix.headingDegrees : null,
       );
 
       // Accumulate distance along the *smoothed* track — GPS noise while
@@ -392,17 +435,18 @@ Future<void> onStart(ServiceInstance service) async {
 
       // Speed comes straight from the filter's velocity estimate — no EMA.
       currentSpeedKmh = kalman.speedKmh;
+      speedAtLastFix = currentSpeedKmh;
       if (currentSpeedKmh > maxSpeedKmh) maxSpeedKmh = currentSpeedKmh;
 
       // Persist the raw fix as the ground-truth track point.
       await db.addTrackPoint(
         TrackPoint()
           ..rideId = rideId
-          ..latitude = pos.latitude
-          ..longitude = pos.longitude
-          ..altitude = pos.altitude
-          ..speedMps = pos.speed
-          ..timestamp = pos.timestamp,
+          ..latitude = fix.latitude
+          ..longitude = fix.longitude
+          ..altitude = fix.altitude
+          ..speedMps = fix.speedMps
+          ..timestamp = fix.timestamp,
       );
       pointCount++;
 

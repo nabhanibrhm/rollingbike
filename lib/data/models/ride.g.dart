@@ -32,24 +32,29 @@ const RideSchema = CollectionSchema(
       name: r'endTime',
       type: IsarType.dateTime,
     ),
-    r'maxSpeedKmh': PropertySchema(
+    r'gpsSource': PropertySchema(
       id: 3,
+      name: r'gpsSource',
+      type: IsarType.string,
+    ),
+    r'maxSpeedKmh': PropertySchema(
+      id: 4,
       name: r'maxSpeedKmh',
       type: IsarType.double,
     ),
     r'movingSeconds': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'movingSeconds',
       type: IsarType.long,
     ),
-    r'name': PropertySchema(id: 5, name: r'name', type: IsarType.string),
+    r'name': PropertySchema(id: 6, name: r'name', type: IsarType.string),
     r'startTime': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'startTime',
       type: IsarType.dateTime,
     ),
     r'totalDistanceMeters': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'totalDistanceMeters',
       type: IsarType.double,
     ),
@@ -91,6 +96,12 @@ int _rideEstimateSize(
 ) {
   var bytesCount = offsets.last;
   {
+    final value = object.gpsSource;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.name;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
@@ -108,11 +119,12 @@ void _rideSerialize(
   writer.writeDouble(offsets[0], object.averageSpeedKmh);
   writer.writeLong(offsets[1], object.durationSeconds);
   writer.writeDateTime(offsets[2], object.endTime);
-  writer.writeDouble(offsets[3], object.maxSpeedKmh);
-  writer.writeLong(offsets[4], object.movingSeconds);
-  writer.writeString(offsets[5], object.name);
-  writer.writeDateTime(offsets[6], object.startTime);
-  writer.writeDouble(offsets[7], object.totalDistanceMeters);
+  writer.writeString(offsets[3], object.gpsSource);
+  writer.writeDouble(offsets[4], object.maxSpeedKmh);
+  writer.writeLong(offsets[5], object.movingSeconds);
+  writer.writeString(offsets[6], object.name);
+  writer.writeDateTime(offsets[7], object.startTime);
+  writer.writeDouble(offsets[8], object.totalDistanceMeters);
 }
 
 Ride _rideDeserialize(
@@ -125,12 +137,13 @@ Ride _rideDeserialize(
   object.averageSpeedKmh = reader.readDouble(offsets[0]);
   object.durationSeconds = reader.readLong(offsets[1]);
   object.endTime = reader.readDateTimeOrNull(offsets[2]);
+  object.gpsSource = reader.readStringOrNull(offsets[3]);
   object.id = id;
-  object.maxSpeedKmh = reader.readDouble(offsets[3]);
-  object.movingSeconds = reader.readLong(offsets[4]);
-  object.name = reader.readStringOrNull(offsets[5]);
-  object.startTime = reader.readDateTime(offsets[6]);
-  object.totalDistanceMeters = reader.readDouble(offsets[7]);
+  object.maxSpeedKmh = reader.readDouble(offsets[4]);
+  object.movingSeconds = reader.readLong(offsets[5]);
+  object.name = reader.readStringOrNull(offsets[6]);
+  object.startTime = reader.readDateTime(offsets[7]);
+  object.totalDistanceMeters = reader.readDouble(offsets[8]);
   return object;
 }
 
@@ -148,14 +161,16 @@ P _rideDeserializeProp<P>(
     case 2:
       return (reader.readDateTimeOrNull(offset)) as P;
     case 3:
-      return (reader.readDouble(offset)) as P;
-    case 4:
-      return (reader.readLong(offset)) as P;
-    case 5:
       return (reader.readStringOrNull(offset)) as P;
+    case 4:
+      return (reader.readDouble(offset)) as P;
+    case 5:
+      return (reader.readLong(offset)) as P;
     case 6:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 7:
+      return (reader.readDateTime(offset)) as P;
+    case 8:
       return (reader.readDouble(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -570,6 +585,168 @@ extension RideQueryFilter on QueryBuilder<Ride, Ride, QFilterCondition> {
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'gpsSource'),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'gpsSource'),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'gpsSource',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'gpsSource',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'gpsSource',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'gpsSource',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'gpsSource',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'gpsSource',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'gpsSource',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'gpsSource',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'gpsSource', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> gpsSourceIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'gpsSource', value: ''),
       );
     });
   }
@@ -1102,6 +1279,18 @@ extension RideQuerySortBy on QueryBuilder<Ride, Ride, QSortBy> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QAfterSortBy> sortByGpsSource() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'gpsSource', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterSortBy> sortByGpsSourceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'gpsSource', Sort.desc);
+    });
+  }
+
   QueryBuilder<Ride, Ride, QAfterSortBy> sortByMaxSpeedKmh() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'maxSpeedKmh', Sort.asc);
@@ -1200,6 +1389,18 @@ extension RideQuerySortThenBy on QueryBuilder<Ride, Ride, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QAfterSortBy> thenByGpsSource() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'gpsSource', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterSortBy> thenByGpsSourceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'gpsSource', Sort.desc);
+    });
+  }
+
   QueryBuilder<Ride, Ride, QAfterSortBy> thenById() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.asc);
@@ -1292,6 +1493,14 @@ extension RideQueryWhereDistinct on QueryBuilder<Ride, Ride, QDistinct> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QDistinct> distinctByGpsSource({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'gpsSource', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Ride, Ride, QDistinct> distinctByMaxSpeedKmh() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'maxSpeedKmh');
@@ -1347,6 +1556,12 @@ extension RideQueryProperty on QueryBuilder<Ride, Ride, QQueryProperty> {
   QueryBuilder<Ride, DateTime?, QQueryOperations> endTimeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'endTime');
+    });
+  }
+
+  QueryBuilder<Ride, String?, QQueryOperations> gpsSourceProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'gpsSource');
     });
   }
 
