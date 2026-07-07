@@ -9,24 +9,31 @@ import 'package:geolocator/geolocator.dart';
 /// - [raw]: geolocator forced onto the Android *LocationManager* (`GPS_PROVIDER`,
 ///   pure GNSS, no Play Services fusion), polling ~1 Hz with no distance filter
 ///   so we see every fix the chip produces.
+/// - [fusedFast]: the *fused* provider (Play Services sensor fusion, poor-signal
+///   help) but at raw's fast cadence — 1 s interval, no distance filter. Tests
+///   whether fused's coarseness was the 5 m filter rather than the provider.
 enum LocationSourceKind {
   fused,
-  raw;
+  raw,
+  fusedFast;
 
   /// Short stable tag persisted on the ride and shown in diagnostics.
   String get tag => switch (this) {
         LocationSourceKind.fused => 'fused',
         LocationSourceKind.raw => 'raw',
+        LocationSourceKind.fusedFast => 'fused_fast',
       };
 
   /// Human label for the picker / summary.
   String get label => switch (this) {
         LocationSourceKind.fused => 'Fused (default)',
         LocationSourceKind.raw => 'Raw GPS',
+        LocationSourceKind.fusedFast => 'Fused fast',
       };
 
   static LocationSourceKind fromTag(String? tag) => switch (tag) {
         'raw' => LocationSourceKind.raw,
+        'fused_fast' => LocationSourceKind.fusedFast,
         _ => LocationSourceKind.fused,
       };
 }
@@ -82,6 +89,7 @@ abstract class LocationSource {
   static LocationSource forKind(LocationSourceKind kind) => switch (kind) {
         LocationSourceKind.fused => _GeolocatorSource(_fusedSettings),
         LocationSourceKind.raw => _GeolocatorSource(_rawSettings),
+        LocationSourceKind.fusedFast => _GeolocatorSource(_fusedFastSettings),
       };
 
   /// Original behaviour: fused provider, 5 m distance filter to suppress jitter.
@@ -95,6 +103,16 @@ abstract class LocationSource {
   static final LocationSettings _rawSettings = AndroidSettings(
     accuracy: LocationAccuracy.best,
     forceLocationManager: true,
+    intervalDuration: const Duration(seconds: 1),
+    distanceFilter: 0,
+  );
+
+  /// Fused provider (Play Services fusion) at raw's fast cadence: 1 s interval,
+  /// no distance filter. `forceLocationManager: false` keeps the fused provider;
+  /// this isolates "provider" from "cadence" vs the original [_fusedSettings].
+  static final LocationSettings _fusedFastSettings = AndroidSettings(
+    accuracy: LocationAccuracy.best,
+    forceLocationManager: false,
     intervalDuration: const Duration(seconds: 1),
     distanceFilter: 0,
   );

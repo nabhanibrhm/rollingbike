@@ -92,6 +92,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
     const descriptions = {
       LocationSourceKind.fused: 'Google fused provider · 5 m filter (original)',
       LocationSourceKind.raw: 'Raw GNSS · 1 s cadence · every fix',
+      LocationSourceKind.fusedFast: 'Fused provider · 1 s cadence · every fix',
     };
     return showDialog<LocationSourceKind>(
       context: context,
