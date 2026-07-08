@@ -6,9 +6,12 @@ import 'package:latlong2/latlong.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
 import '../providers/history_providers.dart';
-import '../services/instagram_share.dart';
+import '../services/ride_share.dart';
 import '../theme/app_theme.dart';
 import 'tracking_map_screen.dart' show basemapUrl;
+
+/// The two ways a rendered ride card can be sent off.
+enum _ShareAction { instagram, download }
 
 /// Detail view for a saved ride: the recorded track replayed as a polyline on
 /// the map, with the full summary stats below.
@@ -26,35 +29,94 @@ class RideDetailScreen extends ConsumerStatefulWidget {
 class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
   bool _sharing = false;
 
-  /// Renders the ride card and shares it to Instagram (with a sharesheet
-  /// fallback). Guarded so it only fires once the track has loaded and never
-  /// re-enters while a render/share is in flight.
+  /// Lets the rider pick Instagram or a plain PNG download, renders the ride
+  /// card, and dispatches it accordingly. Guarded so it only fires once the
+  /// track has loaded and never re-enters while a render/share is in flight.
   Future<void> _share() async {
     if (_sharing) return;
     final points = ref.read(rideTrackProvider(widget.ride.id)).valueOrNull;
     if (points == null) return; // track still loading — button is disabled
+    final action = await _showShareOptions();
+    if (action == null || !mounted) return;
+
     setState(() => _sharing = true);
     try {
-      await InstagramShare.shareRide(
-        context: context,
-        ride: widget.ride,
-        points: points,
-      );
+      if (action == _ShareAction.instagram) {
+        await RideShare.shareToInstagram(
+          context: context,
+          ride: widget.ride,
+          points: points,
+        );
+      } else {
+        await RideShare.saveToGallery(
+          context: context,
+          ride: widget.ride,
+          points: points,
+        );
+        if (mounted) _showMessage('Saved to your gallery.');
+      }
     } catch (_) {
       if (!mounted) return;
-      final cx = AppColors.of(context);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            backgroundColor: cx.surface,
-            content: Text("Couldn't share this ride. Try again.",
-                style: TextStyle(color: cx.dangerInk)),
-          ),
-        );
+      _showMessage(
+        action == _ShareAction.instagram
+            ? "Couldn't share this ride. Try again."
+            : "Couldn't save the image. Try again.",
+        isError: true,
+      );
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
+  }
+
+  Future<_ShareAction?> _showShareOptions() {
+    final cx = AppColors.of(context);
+    return showDialog<_ShareAction>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: cx.surface,
+        title: Text('Share ride',
+            style: TextStyle(color: cx.textBright, fontSize: 18)),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.camera_alt, color: cx.accentInk),
+              title: Text('Share to Instagram',
+                  style: TextStyle(
+                      color: cx.textBright, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.of(ctx).pop(_ShareAction.instagram),
+            ),
+            ListTile(
+              leading: Icon(Icons.download, color: cx.accentInk),
+              title: Text('Download as PNG',
+                  style: TextStyle(
+                      color: cx.textBright, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.of(ctx).pop(_ShareAction.download),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: cx.textDim)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
+    final cx = AppColors.of(context);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          backgroundColor: cx.surface,
+          content: Text(message,
+              style: TextStyle(color: isError ? cx.dangerInk : cx.textBright)),
+        ),
+      );
   }
 
   @override
@@ -88,7 +150,7 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
           else
             IconButton(
               icon: const Icon(Icons.ios_share),
-              tooltip: 'Share to Instagram',
+              tooltip: 'Share ride',
               onPressed: trackAsync.hasValue ? _share : null,
             ),
         ],

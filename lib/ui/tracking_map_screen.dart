@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../providers/settings_providers.dart';
 import '../providers/tracking_providers.dart';
@@ -44,6 +45,23 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
   LatLng? _myLocation;
   bool _locating = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Cover the case where tracking is already active on first build (e.g.
+    // hot restart, or reopening the app mid-ride with the background service
+    // still running) — later transitions are handled by the ref.listen below.
+    final s = ref.read(trackingControllerProvider);
+    if (s.isTracking && !s.isPaused) WakelockPlus.enable();
+  }
+
+  @override
+  void dispose() {
+    // Don't leave the screen pinned awake if this screen goes away mid-ride.
+    WakelockPlus.disable();
+    super.dispose();
+  }
+
   /// Fetches the current position, centers the map on it, and drops the idle
   /// marker. Runs once the map is ready (app open) and on the locate button.
   Future<void> _locateMe({bool moveCamera = true}) async {
@@ -73,17 +91,15 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
     }
   }
 
-  /// Record tap: let the rider pick which GPS pipeline to record with (a
-  /// temporary A/B test), persist the choice so the background isolate reads it,
-  /// then start. Cancelling the picker aborts the start.
-  Future<void> _startRide() async {
+  /// Drawer entry point: let the rider pick which GPS pipeline future rides
+  /// record with (a temporary A/B test), persisting the choice for the
+  /// background isolate to read at the next "Start ride" tap.
+  Future<void> _openTrackingMethodPicker() async {
     final current = await SettingsService.instance.loadGpsSource();
     if (!mounted) return;
     final chosen = await _showGpsSourcePicker(current);
     if (chosen == null || !mounted) return;
     await SettingsService.instance.saveGpsSource(chosen);
-    if (!mounted) return;
-    ref.read(trackingControllerProvider.notifier).start();
   }
 
   Future<LocationSourceKind?> _showGpsSourcePicker(
@@ -98,7 +114,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: cx.surface,
-        title: Text('GPS source (test)',
+        title: Text('Tracking method',
             style: TextStyle(color: cx.textBright, fontSize: 18)),
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
         content: Column(
@@ -148,6 +164,16 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
     final cx = AppColors.of(context);
     final state = ref.watch(trackingControllerProvider);
 
+    // Keep the screen from auto-locking while actively recording (not
+    // paused), so the ride doesn't stop being tracked visually just because
+    // the OS blanked the display. The rider can still lock it manually — this
+    // only disables the *automatic* timeout. Turns off again on pause/stop.
+    ref.listen<bool>(
+      trackingControllerProvider
+          .select((s) => s.isTracking && !s.isPaused),
+      (prev, awake) => awake ? WakelockPlus.enable() : WakelockPlus.disable(),
+    );
+
     // Follow the rider, present the post-ride summary, and surface errors.
     ref.listen<TrackingUiState>(trackingControllerProvider, (prev, next) {
       final t = next.telemetry;
@@ -179,7 +205,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
 
     return Scaffold(
       backgroundColor: cx.canvas,
-      drawer: const _AppDrawer(),
+      drawer: _AppDrawer(onTrackingMethod: _openTrackingMethodPicker),
       body: Stack(
         children: [
           FlutterMap(
@@ -243,7 +269,8 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                 ),
                 _TelemetrySheet(
                   state: state,
-                  onStart: _startRide,
+                  onStart: () =>
+                      ref.read(trackingControllerProvider.notifier).start(),
                   onStop: () =>
                       ref.read(trackingControllerProvider.notifier).stop(),
                   onPause: () =>
@@ -401,9 +428,13 @@ class _LocateButton extends StatelessWidget {
   }
 }
 
-/// Side menu: theme toggle, ride history + exit.
+/// Side menu: theme toggle, ride history, tracking method (GPS source A/B
+/// test) + exit.
 class _AppDrawer extends ConsumerWidget {
-  const _AppDrawer();
+  const _AppDrawer({required this.onTrackingMethod});
+
+  /// Opens the GPS-source picker dialog. Called after the drawer closes.
+  final VoidCallback onTrackingMethod;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -451,6 +482,15 @@ class _AppDrawer extends ConsumerWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const HistoryScreen()),
                 );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.gps_fixed, color: cx.textBright),
+              title: Text('Tracking method',
+                  style: TextStyle(color: cx.textBright)),
+              onTap: () {
+                Navigator.of(context).pop(); // close drawer
+                onTrackingMethod();
               },
             ),
             ListTile(

@@ -8,9 +8,15 @@ import '../data/models/track_point.dart';
 /// The shareable ride card, rendered off-screen into a 9:16 PNG (see
 /// [captureWidgetToPng]) for Instagram Stories.
 ///
-/// The canvas itself is transparent — only the centred card is opaque — so the
-/// PNG carries an 8-bit alpha channel and sits as an interactive sticker over
-/// Instagram's Story background gradient.
+/// Styled after Strava's share image: a fully transparent canvas with the
+/// route line and stats floating directly on it (no map tiles — RollingBike
+/// is offline-first, so the route is drawn as a vector polyline instead; no
+/// background panel either — like Strava's sticker, nothing here should block
+/// a photo or video the rider places behind it in Instagram), in
+/// RollingBike's own mint/coral brand palette rather than Strava's orange.
+///
+/// Every piece of text carries a dark drop shadow (in place of a solid panel)
+/// so it stays legible over whatever ends up behind the sticker.
 ///
 /// It is deliberately styled independently of the app's light/dark theme: the
 /// shared image always uses the dark neon brand look so it reads the same for
@@ -25,138 +31,141 @@ class ShareCard extends StatelessWidget {
   static const _mint = Color(0xFF83FFE6);
   static const _coral = Color(0xFFFF5F5F);
   static const _ink = Color(0xFFFCFCFC);
-  static const _dim = Color(0xFFA1A1A1);
-  static const _cardTop = Color(0xFF1C2A27);
-  static const _cardBottom = Color(0xFF0E1413);
+  static const _dim = Color(0xFFD8D8D8);
+
+  /// Stands in for a background panel: keeps text readable over an arbitrary
+  /// photo/video the rider places behind this transparent sticker.
+  static const _textShadow = [
+    Shadow(color: Color(0xE6000000), blurRadius: 10, offset: Offset(0, 2)),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final title = ride.name?.trim().isNotEmpty == true
         ? ride.name!.trim()
         : 'Untitled ride';
+    final pace = _fmtPace(ride.movingSeconds, ride.totalDistanceMeters);
 
     return DefaultTextStyle(
-      style: const TextStyle(fontFamily: 'JetBrainsMono', color: _ink),
-      child: Center(
-        child: Container(
-          width: 320,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [_cardTop, _cardBottom],
-            ),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: _mint.withValues(alpha: 0.25)),
-            boxShadow: [
-              BoxShadow(
-                color: _mint.withValues(alpha: 0.15),
-                blurRadius: 40,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Brand header.
-              Row(
+      style: const TextStyle(
+        fontFamily: 'JetBrainsMono',
+        color: _ink,
+        shadows: _textShadow,
+      ),
+      child: SizedBox(
+        width: 360,
+        height: 640,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Brand header.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
+              child: Row(
                 children: [
-                  const Icon(Icons.two_wheeler, color: _mint, size: 22),
+                  const Icon(Icons.two_wheeler,
+                      color: _mint, size: 20, shadows: _textShadow),
                   const SizedBox(width: 8),
                   const Text(
                     'RollingBike',
                     style: TextStyle(
                       color: _mint,
-                      fontSize: 20,
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
                     ),
                   ),
+                  const Spacer(),
+                  Text(
+                    _formatDate(ride.startTime),
+                    style: const TextStyle(color: _dim, fontSize: 11),
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
-              // Route map (vector path — no tiles, works offline).
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  height: 176,
-                  width: double.infinity,
-                  color: const Color(0xFF0A0F0E),
-                  child: CustomPaint(
-                    painter: _RoutePainter(points),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+              child: Text(
                 title,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: _ink,
-                  fontSize: 18,
+                  fontSize: 24,
+                  height: 1.15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                _formatDate(ride.startTime),
-                style: const TextStyle(color: _dim, fontSize: 12),
-              ),
-              const SizedBox(height: 18),
-              // Distance hero.
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Text(
-                    (ride.totalDistanceMeters / 1000).toStringAsFixed(2),
-                    style: const TextStyle(
-                      color: _mint,
-                      fontSize: 52,
-                      height: 1,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 6),
-                    child: Text('km',
-                        style: TextStyle(color: _dim, fontSize: 18)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  _Stat(label: 'TIME', value: _fmtDuration(ride.durationSeconds)),
-                  _Stat(
-                      label: 'AVG',
-                      value: ride.averageSpeedKmh.toStringAsFixed(0),
-                      unit: 'km/h'),
-                  _Stat(
-                      label: 'MAX',
-                      value: ride.maxSpeedKmh.toStringAsFixed(0),
-                      unit: 'km/h',
-                      color: _coral),
-                ],
-              ),
-              const SizedBox(height: 20),
-              const Divider(color: Color(0xFF243430), height: 1),
-              const SizedBox(height: 12),
-              const Center(
-                child: Text(
-                  'RollingBike · offline telemetry',
-                  style: TextStyle(
-                      color: _dim, fontSize: 10, letterSpacing: 2),
+            ),
+            // Hero route line (vector, no map tiles) — fills whatever space
+            // is left above the stats.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: SizedBox.expand(
+                  child: CustomPaint(painter: _RoutePainter(points)),
                 ),
               ),
+            ),
+            _StatsPanel(ride: ride, pace: pace),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom stat block. No background of its own — the stats float directly on
+/// the transparent canvas, same as Strava's sticker, relying on
+/// [ShareCard._textShadow] rather than a panel for legibility.
+class _StatsPanel extends StatelessWidget {
+  const _StatsPanel({required this.ride, required this.pace});
+
+  final Ride ride;
+  final String pace;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              _Stat(
+                  label: 'DISTANCE',
+                  value: (ride.totalDistanceMeters / 1000).toStringAsFixed(2),
+                  unit: 'km'),
+              _Stat(
+                  label: 'TOTAL TIME',
+                  value: _fmtDuration(ride.durationSeconds)),
+              _Stat(
+                  label: 'MOVING TIME',
+                  value: _fmtDuration(ride.movingSeconds)),
             ],
           ),
-        ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              _Stat(
+                  label: 'AVG SPEED',
+                  value: ride.averageSpeedKmh.toStringAsFixed(0),
+                  unit: 'km/h'),
+              _Stat(
+                  label: 'MAX SPEED',
+                  value: ride.maxSpeedKmh.toStringAsFixed(0),
+                  unit: 'km/h',
+                  color: ShareCard._coral),
+              _Stat(label: 'PACE', value: pace, unit: '/km'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'RollingBike · offline telemetry',
+            style: TextStyle(color: ShareCard._dim, fontSize: 9, letterSpacing: 2),
+          ),
+        ],
       ),
     );
   }
@@ -192,6 +201,7 @@ class _Stat extends StatelessWidget {
                 color: color,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
+                shadows: ShareCard._textShadow,
               ),
               children: [
                 if (unit.isNotEmpty)
@@ -202,6 +212,7 @@ class _Stat extends StatelessWidget {
                       color: ShareCard._dim,
                       fontSize: 9,
                       fontWeight: FontWeight.w400,
+                      shadows: ShareCard._textShadow,
                     ),
                   ),
               ],
@@ -341,4 +352,21 @@ String _fmtDuration(int seconds) {
   final mm = m.toString().padLeft(2, '0');
   final ss = s.toString().padLeft(2, '0');
   return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+}
+
+/// Pace in minutes:seconds per kilometer, based on moving time (so stops
+/// don't drag it down). '--:--' when there's not enough distance to be
+/// meaningful.
+String _fmtPace(int movingSeconds, double distanceMeters) {
+  final km = distanceMeters / 1000.0;
+  if (km < 0.05 || movingSeconds <= 0) return '--:--';
+  final secPerKm = movingSeconds / km;
+  if (!secPerKm.isFinite) return '--:--';
+  var mm = secPerKm ~/ 60;
+  var ss = (secPerKm % 60).round();
+  if (ss == 60) {
+    ss = 0;
+    mm += 1;
+  }
+  return '$mm:${ss.toString().padLeft(2, '0')}';
 }

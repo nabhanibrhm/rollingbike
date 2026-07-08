@@ -23,6 +23,13 @@
     <!-- Map tile fetch (cached to disk for offline reuse; fonts are bundled). -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- ===================== GALLERY SAVE ===================== -->
+    <!-- Only needed pre-Android 10 (API < 29) to insert into MediaStore for the
+         "Download as PNG" share option; Android 10+ uses scoped storage and
+         needs no permission for this. Test device is API 28, so this is live. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <application
         android:label="Rolling Bike"
         android:name="${applicationName}"

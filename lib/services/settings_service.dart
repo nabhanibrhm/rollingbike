@@ -32,16 +32,17 @@ class SettingsService {
     return File('${dir.path}/$name');
   }
 
-  /// Loads the chosen GPS source. Defaults to [LocationSourceKind.fused] (the
-  /// app's original behaviour) on first run or any read error. Read from the
-  /// background isolate at ride start.
+  /// Loads the chosen GPS source. Defaults to [LocationSourceKind.raw] (raw
+  /// GNSS won the fused-vs-raw comparison — see gps-source-ab-test notes) on
+  /// first run or any read error. Read from the background isolate at ride
+  /// start.
   Future<LocationSourceKind> loadGpsSource() async {
     try {
       final f = await _resolveNamed(_gpsSourceFileName);
-      if (!await f.exists()) return LocationSourceKind.fused;
+      if (!await f.exists()) return LocationSourceKind.raw;
       return LocationSourceKind.fromTag((await f.readAsString()).trim());
     } catch (_) {
-      return LocationSourceKind.fused;
+      return LocationSourceKind.raw;
     }
   }
 

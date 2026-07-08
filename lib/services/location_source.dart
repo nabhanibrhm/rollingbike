@@ -26,15 +26,15 @@ enum LocationSourceKind {
 
   /// Human label for the picker / summary.
   String get label => switch (this) {
-        LocationSourceKind.fused => 'Fused (default)',
-        LocationSourceKind.raw => 'Raw GPS',
+        LocationSourceKind.fused => 'Fused',
+        LocationSourceKind.raw => 'Raw GPS (default)',
         LocationSourceKind.fusedFast => 'Fused fast',
       };
 
   static LocationSourceKind fromTag(String? tag) => switch (tag) {
-        'raw' => LocationSourceKind.raw,
+        'fused' => LocationSourceKind.fused,
         'fused_fast' => LocationSourceKind.fusedFast,
-        _ => LocationSourceKind.fused,
+        _ => LocationSourceKind.raw,
       };
 }
 
