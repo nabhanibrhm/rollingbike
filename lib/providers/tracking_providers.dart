@@ -16,6 +16,8 @@ class TrackingUiState {
   const TrackingUiState({
     this.isTracking = false,
     this.isPaused = false,
+    this.phase = 'idle',
+    this.countdown = 0,
     this.telemetry,
     this.route = const [],
     this.lastFinished,
@@ -24,6 +26,13 @@ class TrackingUiState {
 
   final bool isTracking;
   final bool isPaused;
+
+  /// Ride lifecycle: 'idle', 'acquiring' (waiting for first fix), 'countdown'
+  /// (3-2-1 before the clock starts), or 'recording'.
+  final String phase;
+
+  /// Remaining countdown seconds while [phase] == 'countdown' (0 otherwise).
+  final int countdown;
   final LiveTelemetry? telemetry;
   final List<LatLng> route;
   final LiveTelemetry? lastFinished;
@@ -32,6 +41,8 @@ class TrackingUiState {
   TrackingUiState copyWith({
     bool? isTracking,
     bool? isPaused,
+    String? phase,
+    int? countdown,
     LiveTelemetry? telemetry,
     List<LatLng>? route,
     LiveTelemetry? lastFinished,
@@ -43,6 +54,8 @@ class TrackingUiState {
     return TrackingUiState(
       isTracking: isTracking ?? this.isTracking,
       isPaused: isPaused ?? this.isPaused,
+      phase: phase ?? this.phase,
+      countdown: countdown ?? this.countdown,
       telemetry: clearTelemetry ? null : (telemetry ?? this.telemetry),
       route: route ?? this.route,
       lastFinished: clearFinished ? null : (lastFinished ?? this.lastFinished),
@@ -57,11 +70,13 @@ class TrackingController extends StateNotifier<TrackingUiState> {
   TrackingController(this._service) : super(const TrackingUiState()) {
     _telemetrySub = _service.telemetry.listen(_onTelemetry);
     _stoppedSub = _service.onStopped.listen(_onStopped);
+    _cancelledSub = _service.onCancelled.listen(_onCancelled);
   }
 
   final TrackingService _service;
   late final StreamSubscription<LiveTelemetry> _telemetrySub;
   late final StreamSubscription<LiveTelemetry> _stoppedSub;
+  late final StreamSubscription<String?> _cancelledSub;
 
   void _onTelemetry(LiveTelemetry t) {
     var route = state.route;
@@ -76,12 +91,33 @@ class TrackingController extends StateNotifier<TrackingUiState> {
         route = [...route, point];
       }
     }
-    state =
-        state.copyWith(isTracking: true, isPaused: t.paused, telemetry: t, route: route);
+    state = state.copyWith(
+      isTracking: true,
+      isPaused: t.paused,
+      phase: t.phase,
+      countdown: t.countdown,
+      telemetry: t,
+      route: route,
+    );
   }
 
   void _onStopped(LiveTelemetry t) {
-    state = state.copyWith(isTracking: false, lastFinished: t);
+    state = state.copyWith(
+        isTracking: false, phase: 'idle', countdown: 0, lastFinished: t);
+  }
+
+  /// Acquisition was aborted before a ride began (Cancel or acquire timeout) —
+  /// return to idle, surfacing the reason (if any) so the UI can toast it.
+  void _onCancelled(String? reason) {
+    state = state.copyWith(
+      isTracking: false,
+      isPaused: false,
+      phase: 'idle',
+      countdown: 0,
+      route: const [],
+      clearTelemetry: true,
+      error: reason,
+    );
   }
 
   /// Requests permissions and, if granted, clears prior route/summary and
@@ -95,6 +131,8 @@ class TrackingController extends StateNotifier<TrackingUiState> {
     state = state.copyWith(
       isTracking: true,
       isPaused: false,
+      phase: 'acquiring',
+      countdown: 0,
       route: const [],
       clearTelemetry: true,
       clearFinished: true,
@@ -144,6 +182,8 @@ class TrackingController extends StateNotifier<TrackingUiState> {
     state = state.copyWith(
       isTracking: false,
       isPaused: false,
+      phase: 'idle',
+      countdown: 0,
       route: const [],
       clearTelemetry: true,
       clearFinished: true,
@@ -154,6 +194,7 @@ class TrackingController extends StateNotifier<TrackingUiState> {
   void dispose() {
     _telemetrySub.cancel();
     _stoppedSub.cancel();
+    _cancelledSub.cancel();
     super.dispose();
   }
 }

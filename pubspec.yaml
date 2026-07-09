@@ -36,9 +36,6 @@ dependencies:
   # --- Filesystem path for the Isar directory + tile cache ---
   path_provider: ^2.1.5
 
-  # --- Keep the screen on while actively recording a ride ---
-  wakelock_plus: ^1.6.1
-
   # --- Typography ---
   # JetBrains Mono is bundled as an asset (see `flutter.fonts` below) rather than
   # fetched at runtime, so telemetry type renders offline from first launch.

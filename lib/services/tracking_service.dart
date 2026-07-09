@@ -57,6 +57,14 @@ const double _kSpeedDecaySeconds = 4.0;
 /// promptly).
 const int _kNotificationThrottleSeconds = 5;
 
+/// Cold-start acquisition: wait this long for the first usable GPS fix after the
+/// rider taps START before giving up and cancelling (no orphan ride is written).
+const int _kAcquireTimeoutSeconds = 30;
+
+/// Length (seconds) of the "3… 2… 1…" countdown shown after GPS is acquired,
+/// before the ride clock actually starts.
+const int _kCountdownSeconds = 3;
+
 /// Live snapshot pushed from the background isolate to the UI on each fix (and
 /// once more, finalised, when a ride stops).
 class LiveTelemetry {
@@ -74,6 +82,8 @@ class LiveTelemetry {
     this.paused = false,
     this.lat,
     this.lon,
+    this.phase = 'recording',
+    this.countdown = 0,
   });
 
   final int rideId;
@@ -97,6 +107,13 @@ class LiveTelemetry {
   final double? lat;
   final double? lon;
 
+  /// Ride lifecycle phase: 'acquiring' (waiting for the first usable fix),
+  /// 'countdown' (GPS locked, 3-2-1 before the clock starts), or 'recording'.
+  final String phase;
+
+  /// Remaining countdown seconds while [phase] == 'countdown' (0 otherwise).
+  final int countdown;
+
   /// Values cross an isolate boundary as JSON, so numbers may arrive as int or
   /// double — normalise via `num`.
   factory LiveTelemetry.fromMap(Map<String, dynamic> m) => LiveTelemetry(
@@ -113,6 +130,8 @@ class LiveTelemetry {
         paused: (m['paused'] as bool?) ?? false,
         lat: (m['lat'] as num?)?.toDouble(),
         lon: (m['lon'] as num?)?.toDouble(),
+        phase: (m['phase'] as String?) ?? 'recording',
+        countdown: (m['countdown'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -176,6 +195,13 @@ class TrackingService {
       .on('stopped')
       .where((e) => e != null)
       .map((e) => LiveTelemetry.fromMap(e!));
+
+  /// Fires when acquisition is aborted before the ride ever started (Cancel or
+  /// the acquire timeout). Emits an optional human-readable reason (null when the
+  /// rider cancelled deliberately). No ride is written in this case.
+  Stream<String?> get onCancelled => _service
+      .on('cancelled')
+      .map((e) => e?['reason'] as String?);
 }
 
 /// iOS background fetch handler — Android is the MVP target, so this is a stub
@@ -205,11 +231,19 @@ Future<void> onStart(ServiceInstance service) async {
   final sourceKind = await SettingsService.instance.loadGpsSource();
   final locationSource = LocationSource.forKind(sourceKind);
 
-  final startedAt = DateTime.now();
-  final ride = Ride()
-    ..startTime = startedAt
-    ..gpsSource = sourceKind.tag;
-  final rideId = await db.saveRide(ride);
+  // Ride lifecycle: 'acquiring' (waiting for the first usable fix) → 'countdown'
+  // (GPS locked, 3-2-1) → 'recording'. The ride clock and the Ride row don't
+  // exist until recording begins, so the GPS acquisition delay is never counted
+  // as ride time and a cancelled acquisition leaves no orphan ride behind.
+  var phase = 'acquiring';
+  var countdown = 0;
+
+  // Stamped only when recording actually begins (end of countdown); null while
+  // acquiring / counting down so elapsedSeconds() reads zero.
+  DateTime? startedAt;
+  // Created lazily at that same moment, so a cancelled acquisition writes nothing.
+  Ride? ride;
+  var rideId = 0;
 
   var totalDistanceMeters = 0.0;
   var maxSpeedKmh = 0.0;
@@ -236,25 +270,29 @@ Future<void> onStart(ServiceInstance service) async {
   var totalPaused = Duration.zero;
   double? lastLat;
   double? lastLon;
-  var lastFixAt = startedAt;
+  var lastFixAt = DateTime.now();
 
   // Notification is refreshed on a slower cadence than the 1 Hz tick to avoid
   // per-second notification churn. Seeded at the threshold so the first tick
   // posts immediately; lastNotifiedPaused forces a refresh on pause/resume.
   var ticksSinceNotify = _kNotificationThrottleSeconds;
   bool? lastNotifiedPaused;
+  String? lastNotifiedPhase;
 
   StreamSubscription<GpsFix>? positionSub;
   Timer? ticker;
+  Timer? countdownTimer;
+  Timer? acquireTimeout;
 
   // Wall-clock since start, minus all paused time (completed + any in-progress
   // pause) — so the ride clock freezes while paused.
   int elapsedSeconds() {
+    if (startedAt == null) return 0; // still acquiring / counting down
     var pausedTotal = totalPaused;
     if (paused && pauseStartedAt != null) {
       pausedTotal += DateTime.now().difference(pauseStartedAt!);
     }
-    final elapsed = DateTime.now().difference(startedAt) - pausedTotal;
+    final elapsed = DateTime.now().difference(startedAt!) - pausedTotal;
     return elapsed.isNegative ? 0 : elapsed.inSeconds;
   }
 
@@ -280,26 +318,37 @@ Future<void> onStart(ServiceInstance service) async {
       'paused': paused,
       'lat': smoothLat,
       'lon': smoothLon,
+      'phase': phase,
+      'countdown': countdown,
     });
   }
 
   Future<void> finalizeAndStop() async {
     ticker?.cancel();
+    countdownTimer?.cancel();
+    acquireTimeout?.cancel();
     await positionSub?.cancel();
+    final r = ride;
+    if (r == null) {
+      // Defensive: stop is only wired to finalise while recording, but never
+      // crash if it somehow fires before a ride exists.
+      await service.stopSelf();
+      return;
+    }
     final endedAt = DateTime.now();
     // Exclude paused time from the recorded duration (and thus the average).
     final durationSeconds = elapsedSeconds();
     final finalAvg =
         durationSeconds > 0 ? (totalDistanceMeters / durationSeconds) * 3.6 : 0.0;
 
-    ride
+    r
       ..endTime = endedAt
       ..totalDistanceMeters = totalDistanceMeters
       ..durationSeconds = durationSeconds
       ..movingSeconds = movingSeconds
       ..averageSpeedKmh = finalAvg
       ..maxSpeedKmh = maxSpeedKmh;
-    await db.saveRide(ride);
+    await db.saveRide(r);
 
     service.invoke('stopped', {
       'rideId': rideId,
@@ -317,17 +366,87 @@ Future<void> onStart(ServiceInstance service) async {
     await service.stopSelf();
   }
 
-  service.on('stop').listen((_) => finalizeAndStop());
+  // Abort before recording ever started (Cancel button or acquire timeout):
+  // tear everything down and tell the UI to return to idle. No Ride was created,
+  // so there is nothing to delete.
+  Future<void> cancelAcquire({String? reason}) async {
+    ticker?.cancel();
+    countdownTimer?.cancel();
+    acquireTimeout?.cancel();
+    await positionSub?.cancel();
+    service.invoke(
+        'cancelled', reason == null ? <String, dynamic>{} : {'reason': reason});
+    await service.stopSelf();
+  }
+
+  // Countdown finished → the ride truly begins here. Stamp the clock and create
+  // the Ride only now, and reset every accumulator + the filter/anchors so that
+  // nothing sampled during acquisition or countdown leaks into the ride.
+  Future<void> beginRecording() async {
+    final now = DateTime.now();
+    totalDistanceMeters = 0;
+    maxSpeedKmh = 0;
+    currentSpeedKmh = 0;
+    speedAtLastFix = 0;
+    movingSeconds = 0;
+    pointCount = 0;
+    rejectedStreak = 0;
+    kalman.reset();
+    smoothLat = null;
+    smoothLon = null;
+    lastLat = null;
+    lastLon = null;
+    lastFixAt = now;
+    startedAt = now;
+    ride = Ride()
+      ..startTime = now
+      ..gpsSource = sourceKind.tag;
+    rideId = await db.saveRide(ride!);
+    // Flip to recording only after the ride row exists, so an in-flight fix
+    // can't try to persist against rideId 0.
+    phase = 'recording';
+    countdown = 0;
+    emitTelemetry();
+  }
+
+  // First usable fix arrived → start the 3-2-1 countdown, then record.
+  void beginCountdown() {
+    if (phase != 'acquiring') return;
+    acquireTimeout?.cancel();
+    phase = 'countdown';
+    countdown = _kCountdownSeconds;
+    emitTelemetry();
+    countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      countdown--;
+      if (countdown <= 0) {
+        countdownTimer?.cancel();
+        beginRecording();
+      } else {
+        emitTelemetry();
+      }
+    });
+  }
+
+  // STOP means "finalise the ride" while recording, but "cancel acquisition"
+  // during the acquiring/countdown phases (no ride to save).
+  service.on('stop').listen((_) {
+    if (phase == 'recording') {
+      finalizeAndStop();
+    } else {
+      cancelAcquire();
+    }
+  });
 
   // 1 Hz heartbeat: keeps the duration/avg (and the notification) advancing even
   // while stationary — GPS fixes are gated by the distance filter, so without
   // this the on-screen timer would freeze between fixes.
   ticker = Timer.periodic(const Duration(seconds: 1), (_) async {
-    // Ease the shown speed to zero once fixes stop arriving for a while
-    // (rider stopped — fixes largely cease at a standstill because of the
-    // position stream's distance filter). Skipped while paused: pause/resume
-    // manage currentSpeedKmh directly.
-    if (!paused) {
+    // The clock, speed decay, and moving-time only advance while recording —
+    // during acquiring/countdown the tick just refreshes the UI/notification.
+    if (phase == 'recording' && !paused) {
+      // Ease the shown speed to zero once fixes stop arriving for a while
+      // (rider stopped — fixes largely cease at a standstill because of the
+      // position stream's distance filter).
       final sinceLastFixS =
           DateTime.now().difference(lastFixAt).inMilliseconds / 1000.0;
       if (sinceLastFixS >= _kSpeedStaleSeconds) {
@@ -336,26 +455,39 @@ Future<void> onStart(ServiceInstance service) async {
                 .clamp(0.0, 1.0);
         currentSpeedKmh = speedAtLastFix * (1 - decayFraction);
       }
-    }
-    // Accrue moving time once per tick while above the stop threshold — but not
-    // while paused (paused time is excluded from every stat).
-    if (!paused && currentSpeedKmh > _kMovingSpeedThresholdKmh) {
-      movingSeconds++;
+      // Accrue moving time once per tick while above the stop threshold.
+      if (currentSpeedKmh > _kMovingSpeedThresholdKmh) {
+        movingSeconds++;
+      }
     }
     emitTelemetry();
     // Throttle the notification: refresh every _kNotificationThrottleSeconds, or
-    // right away when the paused state changes (so the title flips promptly).
+    // right away when the paused state or lifecycle phase changes.
     if (service is AndroidServiceInstance) {
       ticksSinceNotify++;
       final pausedChanged = lastNotifiedPaused != paused;
-      if (ticksSinceNotify >= _kNotificationThrottleSeconds || pausedChanged) {
+      final phaseChanged = lastNotifiedPhase != phase;
+      if (ticksSinceNotify >= _kNotificationThrottleSeconds ||
+          pausedChanged ||
+          phaseChanged) {
         ticksSinceNotify = 0;
         lastNotifiedPaused = paused;
+        lastNotifiedPhase = phase;
+        final String title;
+        final String content;
+        if (phase == 'acquiring') {
+          title = 'RollingBike — acquiring GPS…';
+          content = 'Waiting for a GPS signal';
+        } else if (phase == 'countdown') {
+          title = 'RollingBike — starting…';
+          content = 'Ride begins in $countdown';
+        } else {
+          title = paused ? 'RollingBike — paused' : 'RollingBike — recording';
+          content = '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
+              '${_formatDuration(elapsedSeconds())}';
+        }
         await service.setForegroundNotificationInfo(
-          title: paused ? 'RollingBike — paused' : 'RollingBike — recording',
-          content: '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
-              '${_formatDuration(elapsedSeconds())}',
-        );
+            title: title, content: content);
       }
     }
   });
@@ -368,6 +500,22 @@ Future<void> onStart(ServiceInstance service) async {
       // Accuracy gate: ignore junk fixes outright, keeping the last good anchor.
       if (fix.accuracyMeters.isFinite &&
           fix.accuracyMeters > _kMaxAccuracyMeters) {
+        return;
+      }
+
+      // Before the ride clock starts, fixes are used only to (a) detect GPS lock
+      // so the countdown can begin and (b) show the rider's position — nothing is
+      // accumulated or persisted until recording begins.
+      if (phase == 'acquiring') {
+        smoothLat = fix.latitude;
+        smoothLon = fix.longitude;
+        beginCountdown();
+        emitTelemetry();
+        return;
+      }
+      if (phase == 'countdown') {
+        smoothLat = fix.latitude;
+        smoothLon = fix.longitude;
         return;
       }
 
@@ -451,13 +599,14 @@ Future<void> onStart(ServiceInstance service) async {
       pointCount++;
 
       // Persist the running aggregates so a crash mid-ride keeps a sane summary.
-      ride
+      // Only reached while recording, so the ride row exists.
+      ride!
         ..totalDistanceMeters = totalDistanceMeters
         ..durationSeconds = elapsedSeconds()
         ..movingSeconds = movingSeconds
         ..averageSpeedKmh = avgSpeedKmh()
         ..maxSpeedKmh = maxSpeedKmh;
-      await db.saveRide(ride);
+      await db.saveRide(ride!);
 
       emitTelemetry();
     });
@@ -465,10 +614,20 @@ Future<void> onStart(ServiceInstance service) async {
 
   startPositionStream();
 
+  // If GPS never locks, don't hang forever in "acquiring" — cancel cleanly and
+  // let the UI surface the reason.
+  acquireTimeout = Timer(const Duration(seconds: _kAcquireTimeoutSeconds), () {
+    if (phase == 'acquiring') {
+      cancelAcquire(
+          reason:
+              "Couldn't get a GPS signal. Move to an open area and try again.");
+    }
+  });
+
   // Pause: freeze the clock, stop GPS, and drop the anchor so the distance
   // covered while paused is not counted when tracking resumes.
   service.on('pause').listen((_) {
-    if (paused) return;
+    if (phase != 'recording' || paused) return;
     paused = true;
     pauseStartedAt = DateTime.now();
     currentSpeedKmh = 0.0;
