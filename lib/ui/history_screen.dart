@@ -24,9 +24,14 @@ class HistoryScreen extends ConsumerWidget {
         backgroundColor: cx.canvas,
         foregroundColor: cx.textBright,
         elevation: 0,
-        title: const Text(
-          'RIDE HISTORY',
-          style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.w700),
+        automaticallyImplyLeading: false,
+        title: Text(
+          'Ride History',
+          style: TextStyle(
+            color: cx.textBright,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
       body: ridesAsync.when(
@@ -139,37 +144,58 @@ class _RideCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Text(
-                        ride.name?.trim().isNotEmpty == true
-                            ? ride.name!.trim()
-                            : 'Untitled ride',
-                        style: TextStyle(
-                          color: cx.textBright,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            ride.name?.trim().isNotEmpty == true
+                                ? ride.name!.trim()
+                                : 'Untitled ride',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: cx.textBright,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatDate(ride.startTime),
+                            style: TextStyle(color: cx.textDim, fontSize: 13),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      '${(ride.totalDistanceMeters / 1000).toStringAsFixed(2)} km',
-                      style: TextStyle(
-                        color: cx.accentInk,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
+                    RichText(
+                      text: TextSpan(
+                        text:
+                            (ride.totalDistanceMeters / 1000).toStringAsFixed(2),
+                        style: TextStyle(
+                          color: cx.accentInk,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: ' km',
+                            style: TextStyle(
+                              color: cx.textDim,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(ride.startTime),
-                  style: TextStyle(
-                    color: cx.textDim,
-                    fontSize: 12,
-                  ),
+                Container(
+                  height: 1,
+                  margin: const EdgeInsets.symmetric(vertical: 14),
+                  color: cx.border,
                 ),
-                const SizedBox(height: 12),
                 Row(
                   children: [
                     _MiniStat(
@@ -183,12 +209,10 @@ class _RideCard extends StatelessWidget {
                     _MiniStat(
                       label: 'AVG',
                       value: ride.averageSpeedKmh.toStringAsFixed(0),
-                      unit: 'km/h',
                     ),
                     _MiniStat(
                       label: 'MAX',
                       value: ride.maxSpeedKmh.toStringAsFixed(0),
-                      unit: 'km/h',
                       color: cx.danger,
                     ),
                   ],
@@ -241,13 +265,11 @@ class _MiniStat extends StatelessWidget {
   const _MiniStat({
     required this.label,
     required this.value,
-    this.unit = '',
     this.color,
   });
 
   final String label;
   final String value;
-  final String unit;
   final Color? color;
 
   @override
@@ -262,25 +284,12 @@ class _MiniStat extends StatelessWidget {
             style: TextStyle(color: cx.textDim, fontSize: 10),
           ),
           const SizedBox(height: 4),
-          RichText(
-            text: TextSpan(
-              text: value,
-              style: TextStyle(
-                color: color ?? cx.accentInk,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-              children: [
-                if (unit.isNotEmpty)
-                  TextSpan(
-                    text: ' $unit',
-                    style: TextStyle(
-                      color: cx.textDim,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-              ],
+          Text(
+            value,
+            style: TextStyle(
+              color: color ?? cx.textBright,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
