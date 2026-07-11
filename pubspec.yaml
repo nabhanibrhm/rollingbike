@@ -37,8 +37,8 @@ dependencies:
   path_provider: ^2.1.5
 
   # --- Typography ---
-  # JetBrains Mono is bundled as an asset (see `flutter.fonts` below) rather than
-  # fetched at runtime, so telemetry type renders offline from first launch.
+  # Inter (UI) + JetBrains Mono (legacy) are bundled as assets (see `flutter.fonts`
+  # below) rather than fetched at runtime, so type renders offline from first launch.
 
 dev_dependencies:
   flutter_test:
@@ -50,8 +50,20 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # JetBrains Mono bundled locally for offline-first typography (see app_theme).
+  # Inter (primary UI face, matches the design prototype) + JetBrains Mono
+  # bundled locally for offline-first typography (see app_theme).
   fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.ttf
+          weight: 800
     - family: JetBrainsMono
       fonts:
         - asset: assets/fonts/JetBrainsMono-Regular.ttf

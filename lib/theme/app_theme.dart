@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
-/// RollingBike palette — a single four-colour identity (near-white, mint, coral,
-/// charcoal) drives both themes. The near-white/charcoal poles swap between
-/// light and dark, while mint (accent) and coral (danger) stay put as the shared
-/// accents.
+/// RollingBike palette — a single four-colour identity (near-white, amber, red,
+/// near-black) drives both themes, matching the design prototype. The
+/// near-white/near-black poles swap between light and dark, while amber (accent)
+/// and red (danger) stay put as the shared accents.
 ///
-/// The bright mint reads well only as a *fill* — as text on a light canvas it
-/// vanishes — so each mode also carries a legible "ink" variant for text, icons,
-/// and lines. Widgets read the active set via [AppColors.of].
+/// Amber reads well as both a *fill* and as text on the near-black canvas, so on
+/// dark the "ink" variant equals the fill. On a light canvas amber vanishes as
+/// text, so light carries a deepened amber "ink" variant for text, icons, and
+/// lines. Widgets read the active set via [AppColors.of].
 @immutable
 class AppPalette extends ThemeExtension<AppPalette> {
   const AppPalette({
@@ -60,30 +61,30 @@ class AppPalette extends ThemeExtension<AppPalette> {
 
   static const dark = AppPalette(
     brightness: Brightness.dark,
-    canvas: Color(0xFF2C2C2C),
-    surface: Color(0xFF3A3A3A),
-    border: Color(0xFF4D4D4D),
-    textBright: Color(0xFFFCFCFC),
-    textDim: Color(0xFFA1A1A1),
-    accent: Color(0xFF83FFE6),
-    accentInk: Color(0xFF83FFE6),
-    danger: Color(0xFFFF5F5F),
-    dangerInk: Color(0xFFFF8080),
-    onAccent: Color(0xFF1A1A1A),
+    canvas: Color(0xFF121212), // app background (prototype frame)
+    surface: Color(0xFF1E1E1E), // cards / sheets
+    border: Color(0xFF262626),
+    textBright: Color(0xFFF2F2F0),
+    textDim: Color(0xFF9A9A9A),
+    accent: Color(0xFFFFB22C),
+    accentInk: Color(0xFFFFB22C), // amber reads fine as text on near-black
+    danger: Color(0xFFEF4444),
+    dangerInk: Color(0xFFEF4444),
+    onAccent: Color(0xFF1A1200), // near-black ink on amber fills
   );
 
   static const light = AppPalette(
     brightness: Brightness.light,
-    canvas: Color(0xFFFCFCFC),
+    canvas: Color(0xFFFAFAF7),
     surface: Color(0xFFFFFFFF),
-    border: Color(0xFFE6E6E6),
-    textBright: Color(0xFF2C2C2C),
+    border: Color(0xFFECECEC),
+    textBright: Color(0xFF1A1A1A),
     textDim: Color(0xFF6E6E6E),
-    accent: Color(0xFF83FFE6),
-    accentInk: Color(0xFF0B7D6A), // deep teal — legible mint on a light canvas
-    danger: Color(0xFFFF5F5F),
-    dangerInk: Color(0xFFD93A3A),
-    onAccent: Color(0xFF1A1A1A),
+    accent: Color(0xFFFFB22C),
+    accentInk: Color(0xFFB06E00), // deep amber — legible on a light canvas
+    danger: Color(0xFFEF4444),
+    dangerInk: Color(0xFFC92A2A),
+    onAccent: Color(0xFF1A1200),
   );
 
   @override
@@ -148,8 +149,8 @@ class AppColors {
 ThemeData buildLightTheme() => _themeFrom(AppPalette.light);
 ThemeData buildDarkTheme() => _themeFrom(AppPalette.dark);
 
-/// App-wide theme built from a palette. Monospace type scale (JetBrains Mono,
-/// bundled as an asset — see pubspec) so telemetry renders offline.
+/// App-wide theme built from a palette. Inter type scale (bundled as an asset —
+/// see pubspec) matching the design prototype, rendered offline from launch.
 ThemeData _themeFrom(AppPalette p) {
   final base = ThemeData(useMaterial3: true, brightness: p.brightness);
   final scheme =
@@ -169,7 +170,7 @@ ThemeData _themeFrom(AppPalette p) {
     colorScheme: scheme,
     extensions: [p],
     textTheme: base.textTheme.apply(
-      fontFamily: 'JetBrainsMono',
+      fontFamily: 'Inter',
       bodyColor: p.textBright,
       displayColor: p.textBright,
     ),
