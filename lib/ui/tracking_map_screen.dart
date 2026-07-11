@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../core/units.dart';
+import '../providers/settings_providers.dart';
 import '../providers/tracking_providers.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
@@ -208,6 +210,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                   ),
                 _TelemetrySheet(
                   state: state,
+                  unit: ref.watch(speedUnitProvider),
                   onStart: () =>
                       ref.read(trackingControllerProvider.notifier).start(),
                   onStop: () =>
@@ -462,6 +465,7 @@ class _ShowMapButton extends StatelessWidget {
 class _TelemetrySheet extends StatelessWidget {
   const _TelemetrySheet({
     required this.state,
+    required this.unit,
     required this.onStart,
     required this.onStop,
     required this.onPause,
@@ -469,6 +473,7 @@ class _TelemetrySheet extends StatelessWidget {
   });
 
   final TrackingUiState state;
+  final SpeedUnit unit;
   final VoidCallback onStart;
   final VoidCallback onStop;
   final VoidCallback onPause;
@@ -493,11 +498,12 @@ class _TelemetrySheet extends StatelessWidget {
     // finalised summary if present.
     final t = tracking ? state.telemetry : (state.lastFinished ?? state.telemetry);
     final speedKmh = (recording && !paused) ? (t?.speedKmh ?? 0) : 0.0;
-    // Big speed number: the countdown while starting, otherwise the live speed.
-    // While acquiring, the number is replaced entirely by an "Acquiring GPS"
-    // pill (matching the prototype), so no number is shown.
-    final heroNumber =
-        countingDown ? state.countdown.toString() : speedKmh.toStringAsFixed(0);
+    // Big speed number: the countdown while starting, otherwise the live speed
+    // (converted to the rider's chosen unit). While acquiring, the number is
+    // replaced entirely by an "Acquiring GPS" pill, so no number is shown.
+    final heroNumber = countingDown
+        ? state.countdown.toString()
+        : unit.speed(speedKmh).toStringAsFixed(0);
 
     return Container(
       width: double.infinity,
@@ -548,7 +554,7 @@ class _TelemetrySheet extends StatelessWidget {
                     const SizedBox(width: 8),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: Text('km/h',
+                      child: Text(unit.speedLabel,
                           style: TextStyle(color: cx.textDim, fontSize: 18)),
                     ),
                   ],
@@ -567,21 +573,22 @@ class _TelemetrySheet extends StatelessWidget {
               children: [
                 _Metric(
                     label: 'DIST',
-                    value:
-                        ((t?.distanceMeters ?? 0) / 1000).toStringAsFixed(2),
-                    unit: 'km'),
+                    value: unit
+                        .distanceMeters(t?.distanceMeters ?? 0)
+                        .toStringAsFixed(2),
+                    unit: unit.distanceLabel),
                 _Metric(
                     label: 'TIME',
                     value: _fmtDuration(t?.durationSeconds ?? 0),
                     unit: 'min'),
                 _Metric(
                     label: 'AVG',
-                    value: (t?.avgSpeedKmh ?? 0).toStringAsFixed(1),
-                    unit: 'km/h'),
+                    value: unit.speed(t?.avgSpeedKmh ?? 0).toStringAsFixed(1),
+                    unit: unit.speedLabel),
                 _Metric(
                     label: 'MAX',
-                    value: (t?.maxSpeedKmh ?? 0).toStringAsFixed(1),
-                    unit: 'km/h',
+                    value: unit.speed(t?.maxSpeedKmh ?? 0).toStringAsFixed(1),
+                    unit: unit.speedLabel,
                     color: cx.danger),
               ],
             ),

@@ -12,10 +12,12 @@ Future<void> main() async {
   // Heavier startup work (DB, background service, tile cache) runs in
   // SplashScreen so the branded loader is visible while it happens.
   final mode = await SettingsService.instance.loadThemeMode();
+  final unit = await SettingsService.instance.loadSpeedUnit();
   runApp(
     ProviderScope(
       overrides: [
         themeModeProvider.overrideWith((ref) => ThemeModeController(mode)),
+        speedUnitProvider.overrideWith((ref) => SpeedUnitController(unit)),
       ],
       child: const RollingBikeApp(),
     ),

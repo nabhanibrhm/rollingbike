@@ -3,15 +3,62 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../core/units.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
 import '../providers/history_providers.dart';
+import '../providers/settings_providers.dart';
 import '../services/ride_share.dart';
 import '../theme/app_theme.dart';
 import 'tracking_map_screen.dart' show basemapUrl;
 
 /// The two ways a rendered ride card can be sent off.
 enum _ShareAction { instagram, download }
+
+/// A row in the share sheet: an amber icon in a rounded square + a label.
+class _ShareOption extends StatelessWidget {
+  const _ShareOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: cx.canvas,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: cx.accentInk, size: 18),
+            ),
+            const SizedBox(width: 14),
+            Text(label,
+                style: TextStyle(
+                    color: cx.textBright,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Detail view for a saved ride: the recorded track replayed as a polyline on
 /// the map, with the full summary stats below.
@@ -72,36 +119,43 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
     final cx = AppColors.of(context);
     return showDialog<_ShareAction>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => Dialog(
         backgroundColor: cx.surface,
-        title: Text('Share ride',
-            style: TextStyle(color: cx.textBright, fontSize: 18)),
-        contentPadding: const EdgeInsets.symmetric(vertical: 12),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(Icons.camera_alt, color: cx.accentInk),
-              title: Text('Share to Instagram',
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Share ride',
                   style: TextStyle(
-                      color: cx.textBright, fontWeight: FontWeight.w600)),
-              onTap: () => Navigator.of(ctx).pop(_ShareAction.instagram),
-            ),
-            ListTile(
-              leading: Icon(Icons.download, color: cx.accentInk),
-              title: Text('Download as PNG',
-                  style: TextStyle(
-                      color: cx.textBright, fontWeight: FontWeight.w600)),
-              onTap: () => Navigator.of(ctx).pop(_ShareAction.download),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: cx.textDim)),
+                      color: cx.textBright,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 14),
+              _ShareOption(
+                icon: Icons.camera_alt,
+                label: 'Share to Instagram',
+                onTap: () => Navigator.of(ctx).pop(_ShareAction.instagram),
+              ),
+              _ShareOption(
+                icon: Icons.download,
+                label: 'Download as PNG',
+                onTap: () => Navigator.of(ctx).pop(_ShareAction.download),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text('Cancel', style: TextStyle(color: cx.textDim)),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -133,7 +187,10 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
         backgroundColor: cx.canvas,
         foregroundColor: cx.textBright,
         elevation: 0,
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        centerTitle: true,
+        shape: Border(bottom: BorderSide(color: cx.border)),
+        title: Text(title,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
         actions: [
           if (_sharing)
             Padding(
@@ -149,7 +206,7 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
             )
           else
             IconButton(
-              icon: const Icon(Icons.ios_share),
+              icon: const Icon(Icons.share),
               tooltip: 'Share ride',
               onPressed: trackAsync.hasValue ? _share : null,
             ),
@@ -157,7 +214,9 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
       ),
       body: Column(
         children: [
-          Expanded(
+          // Fixed map header (mockup), then the stats scroll beneath it.
+          SizedBox(
+            height: 320,
             child: trackAsync.when(
               loading: () => Center(
                 child: CircularProgressIndicator(color: cx.accentInk),
@@ -172,7 +231,14 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
               data: (points) => _RouteMap(points: points),
             ),
           ),
-          _SummaryPanel(ride: widget.ride),
+          Expanded(
+            child: SingleChildScrollView(
+              child: _SummaryPanel(
+                ride: widget.ride,
+                unit: ref.watch(speedUnitProvider),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -299,20 +365,18 @@ class _BaseMap extends StatelessWidget {
 
 /// Bottom stats panel — distance, elapsed vs moving time, avg/max speed.
 class _SummaryPanel extends StatelessWidget {
-  const _SummaryPanel({required this.ride});
+  const _SummaryPanel({required this.ride, required this.unit});
 
   final Ride ride;
+  final SpeedUnit unit;
 
   @override
   Widget build(BuildContext context) {
     final cx = AppColors.of(context);
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        color: cx.surface,
-        border: Border(top: BorderSide(color: cx.border)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+      color: cx.canvas,
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 24),
       child: SafeArea(
         top: false,
         child: Column(
@@ -321,33 +385,35 @@ class _SummaryPanel extends StatelessWidget {
           children: [
             Text(
               _formatDate(ride.startTime),
-              style: TextStyle(color: cx.textDim, fontSize: 12),
+              style: TextStyle(color: cx.textDim, fontSize: 13),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
                 Text(
-                  (ride.totalDistanceMeters / 1000).toStringAsFixed(2),
+                  unit
+                      .distanceMeters(ride.totalDistanceMeters)
+                      .toStringAsFixed(2),
                   style: TextStyle(
-                    color: cx.accentInk,
+                    color: cx.textBright,
                     fontSize: 44,
                     height: 1,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(width: 6),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Text(
-                    'km',
+                    unit.distanceLabel,
                     style: TextStyle(color: cx.textDim, fontSize: 16),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 32),
             Row(
               children: [
                 _Stat(
@@ -360,18 +426,18 @@ class _SummaryPanel extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Row(
               children: [
                 _Stat(
                   label: 'AVG SPEED',
-                  value: ride.averageSpeedKmh.toStringAsFixed(1),
-                  unit: 'km/h',
+                  value: unit.speed(ride.averageSpeedKmh).toStringAsFixed(1),
+                  unit: unit.speedLabel,
                 ),
                 _Stat(
                   label: 'MAX SPEED',
-                  value: ride.maxSpeedKmh.toStringAsFixed(1),
-                  unit: 'km/h',
+                  value: unit.speed(ride.maxSpeedKmh).toStringAsFixed(1),
+                  unit: unit.speedLabel,
                   color: cx.danger,
                 ),
               ],
@@ -415,7 +481,7 @@ class _Stat extends StatelessWidget {
               Text(
                 value,
                 style: TextStyle(
-                  color: color ?? cx.accentInk,
+                  color: color ?? cx.textBright,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                 ),

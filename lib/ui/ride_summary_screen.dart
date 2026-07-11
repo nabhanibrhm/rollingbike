@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/settings_providers.dart';
 import '../providers/tracking_providers.dart';
 import '../services/tracking_service.dart';
 import '../theme/app_theme.dart';
@@ -79,6 +80,7 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
   Widget build(BuildContext context) {
     final cx = AppColors.of(context);
     final t = widget.telemetry;
+    final unit = ref.watch(speedUnitProvider);
     return PopScope(
       // Backing out keeps the (already-saved) ride, unnamed.
       canPop: !_busy,
@@ -109,7 +111,7 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Text(
-                      (t.distanceMeters / 1000).toStringAsFixed(2),
+                      unit.distanceMeters(t.distanceMeters).toStringAsFixed(2),
                       style: TextStyle(
                         color: cx.accentInk,
                         fontSize: 64,
@@ -120,7 +122,7 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                     const SizedBox(width: 8),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: Text('km',
+                      child: Text(unit.distanceLabel,
                           style: TextStyle(color: cx.textDim, fontSize: 20)),
                     ),
                   ],
@@ -141,12 +143,12 @@ class _RideSummaryScreenState extends ConsumerState<RideSummaryScreen> {
                   children: [
                     _SummaryStat(
                         label: 'AVG SPEED',
-                        value: t.avgSpeedKmh.toStringAsFixed(1),
-                        unit: 'km/h'),
+                        value: unit.speed(t.avgSpeedKmh).toStringAsFixed(1),
+                        unit: unit.speedLabel),
                     _SummaryStat(
                         label: 'MAX SPEED',
-                        value: t.maxSpeedKmh.toStringAsFixed(1),
-                        unit: 'km/h',
+                        value: unit.speed(t.maxSpeedKmh).toStringAsFixed(1),
+                        unit: unit.speedLabel,
                         color: cx.danger),
                   ],
                 ),

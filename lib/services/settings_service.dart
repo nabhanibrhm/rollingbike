@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../core/units.dart';
 import 'location_source.dart';
 
 /// Tiny file-backed store for user preferences. Kept dependency-free (plain file
@@ -17,6 +18,7 @@ class SettingsService {
 
   static const _fileName = 'settings.txt';
   static const _gpsSourceFileName = 'gps_source.txt';
+  static const _speedUnitFileName = 'speed_unit.txt';
 
   File? _file;
 
@@ -76,6 +78,28 @@ class SettingsService {
     try {
       final f = await _resolve();
       await f.writeAsString(mode == ThemeMode.light ? 'light' : 'dark');
+    } catch (_) {
+      // best-effort; the choice still applies for this session
+    }
+  }
+
+  /// Loads the display speed/distance unit. Defaults to km/h on first run or
+  /// any read error.
+  Future<SpeedUnit> loadSpeedUnit() async {
+    try {
+      final f = await _resolveNamed(_speedUnitFileName);
+      if (!await f.exists()) return SpeedUnit.kmh;
+      return SpeedUnit.fromTag((await f.readAsString()).trim());
+    } catch (_) {
+      return SpeedUnit.kmh;
+    }
+  }
+
+  /// Persists the display unit. Best-effort.
+  Future<void> saveSpeedUnit(SpeedUnit unit) async {
+    try {
+      final f = await _resolveNamed(_speedUnitFileName);
+      await f.writeAsString(unit.tag);
     } catch (_) {
       // best-effort; the choice still applies for this session
     }

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/units.dart';
 import '../data/database_service.dart';
 import '../data/models/ride.dart';
 import '../providers/history_providers.dart';
+import '../providers/settings_providers.dart';
 import '../theme/app_theme.dart';
 import 'ride_detail_screen.dart';
 
@@ -17,6 +19,7 @@ class HistoryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cx = AppColors.of(context);
     final ridesAsync = ref.watch(rideHistoryProvider);
+    final unit = ref.watch(speedUnitProvider);
 
     return Scaffold(
       backgroundColor: cx.canvas,
@@ -53,6 +56,7 @@ class HistoryScreen extends ConsumerWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, i) => _RideCard(
               ride: rides[i],
+              unit: unit,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => RideDetailScreen(ride: rides[i]),
@@ -100,11 +104,13 @@ class _EmptyState extends StatelessWidget {
 class _RideCard extends StatelessWidget {
   const _RideCard({
     required this.ride,
+    required this.unit,
     required this.onTap,
     required this.onDelete,
   });
 
   final Ride ride;
+  final SpeedUnit unit;
   final VoidCallback onTap;
   final Future<void> Function() onDelete;
 
@@ -170,8 +176,9 @@ class _RideCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     RichText(
                       text: TextSpan(
-                        text:
-                            (ride.totalDistanceMeters / 1000).toStringAsFixed(2),
+                        text: unit
+                            .distanceMeters(ride.totalDistanceMeters)
+                            .toStringAsFixed(2),
                         style: TextStyle(
                           color: cx.accentInk,
                           fontSize: 19,
@@ -179,7 +186,7 @@ class _RideCard extends StatelessWidget {
                         ),
                         children: [
                           TextSpan(
-                            text: ' km',
+                            text: ' ${unit.distanceLabel}',
                             style: TextStyle(
                               color: cx.textDim,
                               fontSize: 12,
@@ -208,11 +215,11 @@ class _RideCard extends StatelessWidget {
                     ),
                     _MiniStat(
                       label: 'AVG',
-                      value: ride.averageSpeedKmh.toStringAsFixed(0),
+                      value: unit.speed(ride.averageSpeedKmh).toStringAsFixed(0),
                     ),
                     _MiniStat(
                       label: 'MAX',
-                      value: ride.maxSpeedKmh.toStringAsFixed(0),
+                      value: unit.speed(ride.maxSpeedKmh).toStringAsFixed(0),
                       color: cx.danger,
                     ),
                   ],
