@@ -1,19 +1,14 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../providers/settings_providers.dart';
 import '../providers/tracking_providers.dart';
-import '../services/location_source.dart';
 import '../services/permission_service.dart';
-import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
-import 'history_screen.dart';
 import 'ride_summary_screen.dart';
 
 /// CartoDB basemap URL for the given brightness — dark tiles on the dark theme,
@@ -87,62 +82,6 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
     }
   }
 
-  /// Drawer entry point: let the rider pick which GPS pipeline future rides
-  /// record with (a temporary A/B test), persisting the choice for the
-  /// background isolate to read at the next "Start ride" tap.
-  Future<void> _openTrackingMethodPicker() async {
-    final current = await SettingsService.instance.loadGpsSource();
-    if (!mounted) return;
-    final chosen = await _showGpsSourcePicker(current);
-    if (chosen == null || !mounted) return;
-    await SettingsService.instance.saveGpsSource(chosen);
-  }
-
-  Future<LocationSourceKind?> _showGpsSourcePicker(
-      LocationSourceKind current) {
-    final cx = AppColors.of(context);
-    const descriptions = {
-      LocationSourceKind.fused: 'Google fused provider · 5 m filter (original)',
-      LocationSourceKind.raw: 'Raw GNSS · 1 s cadence · every fix',
-      LocationSourceKind.fusedFast: 'Fused provider · 1 s cadence · every fix',
-    };
-    return showDialog<LocationSourceKind>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: cx.surface,
-        title: Text('Tracking method',
-            style: TextStyle(color: cx.textBright, fontSize: 18)),
-        contentPadding: const EdgeInsets.symmetric(vertical: 12),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final kind in LocationSourceKind.values)
-              ListTile(
-                onTap: () => Navigator.of(ctx).pop(kind),
-                leading: Icon(
-                  kind == current
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked,
-                  color: kind == current ? cx.accentInk : cx.textDim,
-                ),
-                title: Text(kind.label,
-                    style: TextStyle(
-                        color: cx.textBright, fontWeight: FontWeight.w600)),
-                subtitle: Text(descriptions[kind]!,
-                    style: TextStyle(color: cx.textDim, fontSize: 12)),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: cx.textDim)),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showError(String message) {
     final cx = AppColors.of(context);
     ScaffoldMessenger.of(context)
@@ -192,7 +131,6 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
 
     return Scaffold(
       backgroundColor: cx.canvas,
-      drawer: _AppDrawer(onTrackingMethod: _openTrackingMethodPicker),
       body: Stack(
         children: [
           // Base layer: the live map on demand, or a lightweight stats backdrop
@@ -244,30 +182,30 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
               ],
             )
           else
-            Positioned.fill(child: _StatsBackdrop(state: state)),
+            Positioned.fill(
+              child: _StatsBackdrop(state: state, onShowMap: _toggleMap),
+            ),
           if (_showMap) const _MapAttribution(),
-          const _MenuButton(),
-          // Map toggle (left) + locate (right, map only) sit just above the
-          // telemetry sheet so they're never hidden behind it.
           Align(
             alignment: Alignment.bottomCenter,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _MapToggleButton(showMap: _showMap, onTap: _toggleMap),
-                      if (_showMap)
-                        _LocateButton(busy: _locating, onTap: _locateMe)
-                      else
-                        const SizedBox.shrink(),
-                    ],
+                // Hide-map (left) + recenter (right) float just above the sheet
+                // only while the map is on screen. When it's hidden, the
+                // backdrop carries its own centered "Show map" pill instead.
+                if (_showMap)
+                  Padding(
+                    padding:
+                        const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _MapToggleButton(showMap: _showMap, onTap: _toggleMap),
+                        _LocateButton(busy: _locating, onTap: _locateMe),
+                      ],
+                    ),
                   ),
-                ),
                 _TelemetrySheet(
                   state: state,
                   onStart: () =>
@@ -336,48 +274,6 @@ class _MapAttribution extends StatelessWidget {
           child: Text(
             '© OpenStreetMap · CARTO',
             style: TextStyle(color: cx.textDim, fontSize: 9),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Floating glass hamburger that opens the app drawer, mirroring the
-/// attribution chip in the opposite corner.
-class _MenuButton extends StatelessWidget {
-  const _MenuButton();
-
-  @override
-  Widget build(BuildContext context) {
-    final cx = AppColors.of(context);
-    return Positioned(
-      top: 8,
-      left: 8,
-      child: SafeArea(
-        child: Builder(
-          builder: (context) => ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Material(
-                color: cx.surface.withValues(alpha: 0.6),
-                child: InkWell(
-                  onTap: () => Scaffold.of(context).openDrawer(),
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                          color: cx.accentInk.withValues(alpha: 0.3)),
-                    ),
-                    child: Icon(Icons.menu, color: cx.textBright),
-                  ),
-                ),
-              ),
-            ),
           ),
         ),
       ),
@@ -478,11 +374,13 @@ class _MapToggleButton extends StatelessWidget {
 
 /// Lightweight backdrop shown in place of the map (default) — no tiles, no
 /// blur, so the GPU stays idle and the screen can sleep while recording
-/// continues in the background service.
+/// continues in the background service. Mirrors the prototype's map-hidden
+/// state: branded wordmark, a hint, and a "Show map" pill.
 class _StatsBackdrop extends StatelessWidget {
-  const _StatsBackdrop({required this.state});
+  const _StatsBackdrop({required this.state, required this.onShowMap});
 
   final TrackingUiState state;
+  final VoidCallback onShowMap;
 
   @override
   Widget build(BuildContext context) {
@@ -494,29 +392,29 @@ class _StatsBackdrop extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.two_wheeler,
-                size: 72, color: cx.accentInk.withValues(alpha: 0.5)),
-            const SizedBox(height: 16),
+            Icon(Icons.speed, size: 56, color: cx.accentInk),
+            const SizedBox(height: 18),
             Text(
               'RollingBike',
               style: TextStyle(
                 color: cx.accentInk,
-                fontSize: 26,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 44),
+              padding: const EdgeInsets.symmetric(horizontal: 48),
               child: Text(
                 recording
                     ? 'Recording in the background — the screen can sleep to save battery.'
-                    : 'Map hidden to save battery. Tap Map to view your route.',
+                    : 'Map hidden to save battery. Tap below to view your route.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: cx.textDim, fontSize: 13, height: 1.4),
+                style: TextStyle(color: cx.textDim, fontSize: 14, height: 1.5),
               ),
             ),
+            const SizedBox(height: 18),
+            _ShowMapButton(onTap: onShowMap),
           ],
         ),
       ),
@@ -524,78 +422,35 @@ class _StatsBackdrop extends StatelessWidget {
   }
 }
 
-/// Side menu: theme toggle, ride history, tracking method (GPS source A/B
-/// test) + exit.
-class _AppDrawer extends ConsumerWidget {
-  const _AppDrawer({required this.onTrackingMethod});
+/// Outline pill inside the map-hidden backdrop that reveals the live map.
+class _ShowMapButton extends StatelessWidget {
+  const _ShowMapButton({required this.onTap});
 
-  /// Opens the GPS-source picker dialog. Called after the drawer closes.
-  final VoidCallback onTrackingMethod;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final cx = AppColors.of(context);
-    final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
-    return Drawer(
-      backgroundColor: cx.surface,
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-              child: Text(
-                'RollingBike',
-                style: TextStyle(
-                  color: cx.accentInk,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                ),
-              ),
-            ),
-            Divider(color: cx.border, height: 1),
-            SwitchListTile(
-              secondary: Icon(
-                isDark ? Icons.dark_mode : Icons.light_mode,
-                color: cx.textBright,
-              ),
-              title: Text('Dark mode',
-                  style: TextStyle(color: cx.textBright)),
-              value: isDark,
-              activeThumbColor: cx.onAccent,
-              activeTrackColor: cx.accent,
-              onChanged: (_) =>
-                  ref.read(themeModeProvider.notifier).toggle(),
-            ),
-            Divider(color: cx.border, height: 1),
-            ListTile(
-              leading: Icon(Icons.history, color: cx.textBright),
-              title: Text('History of trips',
-                  style: TextStyle(color: cx.textBright)),
-              onTap: () {
-                Navigator.of(context).pop(); // close drawer
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const HistoryScreen()),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.gps_fixed, color: cx.textBright),
-              title: Text('Tracking method',
-                  style: TextStyle(color: cx.textBright)),
-              onTap: () {
-                Navigator.of(context).pop(); // close drawer
-                onTrackingMethod();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.exit_to_app, color: cx.textBright),
-              title:
-                  Text('Exit', style: TextStyle(color: cx.textBright)),
-              onTap: () => SystemNavigator.pop(),
-            ),
-          ],
+    return Material(
+      color: Colors.transparent,
+      shape: StadiumBorder(side: BorderSide(color: cx.border)),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.map_outlined, color: cx.textBright, size: 17),
+              const SizedBox(width: 8),
+              Text('Show map',
+                  style: TextStyle(
+                      color: cx.textBright,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       ),
     );
@@ -619,6 +474,10 @@ class _TelemetrySheet extends StatelessWidget {
   final VoidCallback onPause;
   final VoidCallback onResume;
 
+  /// How long the rider must hold STOP to end a ride (matches the prototype's
+  /// "Hold STOP for 2.2s" affordance).
+  static const double _stopHoldSeconds = 2.2;
+
   @override
   Widget build(BuildContext context) {
     final cx = AppColors.of(context);
@@ -634,200 +493,138 @@ class _TelemetrySheet extends StatelessWidget {
     // finalised summary if present.
     final t = tracking ? state.telemetry : (state.lastFinished ?? state.telemetry);
     final speedKmh = (recording && !paused) ? (t?.speedKmh ?? 0) : 0.0;
-    // Hero readout: the countdown number while counting down, dashes while
-    // acquiring, otherwise the live speed.
-    final heroValue = countingDown
-        ? state.countdown.toString()
-        : (acquiring ? '--' : speedKmh.toStringAsFixed(0));
+    // Big speed number: the countdown while starting, otherwise the live speed.
+    // While acquiring, the number is replaced entirely by an "Acquiring GPS"
+    // pill (matching the prototype), so no number is shown.
+    final heroNumber =
+        countingDown ? state.countdown.toString() : speedKmh.toStringAsFixed(0);
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: cx.surface.withValues(alpha: 0.72),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border(
-              top: BorderSide(color: cx.accentInk.withValues(alpha: 0.3)),
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: cx.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: cx.border)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: cx.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 44,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: cx.border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                // Hero: live speed, or the big countdown number while starting.
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      heroValue,
-                      style: TextStyle(
-                        color: acquiring ? cx.textDim : cx.accentInk,
-                        fontSize: countingDown ? 96 : 72,
-                        height: 1,
-                        fontWeight: FontWeight.w700,
-                      ),
+            const SizedBox(height: 16),
+            // Hero: the acquiring pill, or the big speed/countdown number.
+            if (acquiring)
+              _StatusPill(
+                label: 'ACQUIRING GPS…',
+                dotColor: cx.accent,
+                textColor: cx.textBright,
+                borderColor: cx.border,
+              )
+            else ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    heroNumber,
+                    style: TextStyle(
+                      color: countingDown ? cx.accentInk : cx.textBright,
+                      fontSize: countingDown ? 84 : 60,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
                     ),
-                    if (!countingDown) ...[
-                      const SizedBox(width: 8),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Text('km/h',
-                            style:
-                                TextStyle(color: cx.textDim, fontSize: 18)),
-                      ),
-                    ],
+                  ),
+                  if (!countingDown) ...[
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text('km/h',
+                          style: TextStyle(color: cx.textDim, fontSize: 18)),
+                    ),
                   ],
-                ),
-                if (paused) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: cx.accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: cx.accentInk.withValues(alpha: 0.6)),
-                    ),
-                    child: Text(
-                      'PAUSED',
-                      style: TextStyle(
-                          color: cx.accentInk,
-                          fontSize: 12,
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ] else if (countingDown) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: cx.accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: cx.accentInk.withValues(alpha: 0.6)),
-                    ),
-                    child: Text(
-                      'GET READY',
-                      style: TextStyle(
-                          color: cx.accentInk,
-                          fontSize: 12,
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ] else if (acquiring) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: cx.textDim),
-                      ),
-                      const SizedBox(width: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: cx.textDim.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: cx.textDim.withValues(alpha: 0.5)),
-                        ),
-                        child: Text(
-                          'ACQUIRING GPS…',
-                          style: TextStyle(
-                              color: cx.textDim,
-                              fontSize: 12,
-                              letterSpacing: 2,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    _Metric(
-                        label: 'DIST',
-                        value:
-                            ((t?.distanceMeters ?? 0) / 1000).toStringAsFixed(2),
-                        unit: 'km'),
-                    _Metric(
-                        label: 'TIME',
-                        value: _fmtDuration(t?.durationSeconds ?? 0),
-                        unit: ''),
-                    _Metric(
-                        label: 'AVG',
-                        value: (t?.avgSpeedKmh ?? 0).toStringAsFixed(1),
-                        unit: 'km/h'),
-                    _Metric(
-                        label: 'MAX',
-                        value: (t?.maxSpeedKmh ?? 0).toStringAsFixed(1),
-                        unit: 'km/h',
-                        color: cx.danger),
-                  ],
-                ),
-                const SizedBox(height: 22),
-                if (!tracking)
-                  _SheetButton(
-                    label: 'START RIDE',
-                    color: cx.accent,
-                    onPressed: onStart,
-                  )
-                else if (acquiring || countingDown)
-                  // No ride has started yet — the only action is to back out.
-                  _SheetButton(
-                    label: 'CANCEL',
-                    color: cx.danger,
-                    onPressed: onStop,
-                  )
-                else
-                  Row(
-                    children: [
-                      // Pause ↔ Resume.
-                      Expanded(
-                        child: _SheetButton(
-                          label: paused ? 'RESUME' : 'PAUSE',
-                          color: cx.accent,
-                          onPressed: paused ? onResume : onPause,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _SheetButton(
-                          label: 'STOP',
-                          color: cx.danger,
-                          onPressed: onStop,
-                        ),
-                      ),
-                    ],
-                  ),
+              ),
+              if (paused) ...[
+                const SizedBox(height: 8),
+                _OutlinePill(label: 'PAUSED', color: cx.accentInk),
+              ] else if (countingDown) ...[
+                const SizedBox(height: 8),
+                _OutlinePill(label: 'GET READY', color: cx.accentInk),
+              ],
+            ],
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                _Metric(
+                    label: 'DIST',
+                    value:
+                        ((t?.distanceMeters ?? 0) / 1000).toStringAsFixed(2),
+                    unit: 'km'),
+                _Metric(
+                    label: 'TIME',
+                    value: _fmtDuration(t?.durationSeconds ?? 0),
+                    unit: 'min'),
+                _Metric(
+                    label: 'AVG',
+                    value: (t?.avgSpeedKmh ?? 0).toStringAsFixed(1),
+                    unit: 'km/h'),
+                _Metric(
+                    label: 'MAX',
+                    value: (t?.maxSpeedKmh ?? 0).toStringAsFixed(1),
+                    unit: 'km/h',
+                    color: cx.danger),
               ],
             ),
-          ),
+            const SizedBox(height: 20),
+            if (!tracking)
+              _SheetButton(
+                label: 'START RIDE',
+                color: cx.accent,
+                onPressed: onStart,
+              )
+            else if (acquiring || countingDown)
+              // No ride has started yet — the only action is to back out.
+              _SheetButton(
+                label: 'CANCEL',
+                outlined: true,
+                onPressed: onStop,
+              )
+            else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _SheetButton(
+                      label: paused ? 'RESUME' : 'PAUSE',
+                      color: cx.accent,
+                      onPressed: paused ? onResume : onPause,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _HoldToStopButton(
+                      onStop: onStop,
+                      holdSeconds: _stopHoldSeconds,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Hold STOP for ${_stopHoldSeconds.toStringAsFixed(1)}s to end ride',
+                style: TextStyle(color: cx.textDim, fontSize: 11),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -843,36 +640,209 @@ class _TelemetrySheet extends StatelessWidget {
   }
 }
 
-/// Large pill button used in the telemetry sheet (start / pause / resume /
-/// stop). Dark label on a solid accent fill.
+/// Pill button used in the telemetry sheet (start / pause / resume). A solid
+/// [color] fill with a dark label, or an [outlined] transparent variant (used
+/// for CANCEL) with a bordered, bright label.
 class _SheetButton extends StatelessWidget {
   const _SheetButton({
     required this.label,
-    required this.color,
     required this.onPressed,
+    this.color,
+    this.outlined = false,
   });
 
   final String label;
-  final Color color;
   final VoidCallback onPressed;
+  final Color? color;
+  final bool outlined;
 
   @override
   Widget build(BuildContext context) {
     final cx = AppColors.of(context);
+    final style = const TextStyle(fontSize: 16, fontWeight: FontWeight.w800);
+    if (outlined) {
+      return SizedBox(
+        height: 56,
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: cx.textBright,
+            side: BorderSide(color: cx.border),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+          ),
+          child: Text(label, style: style),
+        ),
+      );
+    }
     return SizedBox(
-      height: 68,
+      height: 56,
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: cx.onAccent,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+        child: Text(label, style: style),
+      ),
+    );
+  }
+}
+
+/// Press-and-hold STOP button: a red fill with a translucent progress overlay
+/// that sweeps left→right as the rider holds. Ends the ride once full; resets
+/// if released early. Mirrors the prototype's hold-to-stop affordance.
+class _HoldToStopButton extends StatefulWidget {
+  const _HoldToStopButton({required this.onStop, required this.holdSeconds});
+
+  final VoidCallback onStop;
+  final double holdSeconds;
+
+  @override
+  State<_HoldToStopButton> createState() => _HoldToStopButtonState();
+}
+
+class _HoldToStopButtonState extends State<_HoldToStopButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: (widget.holdSeconds * 1000).round()),
+  )..addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onStop();
+        _c.reset();
+      }
+    });
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _release() {
+    if (_c.status != AnimationStatus.completed) _c.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
+    return Listener(
+      onPointerDown: (_) => _c.forward(),
+      onPointerUp: (_) => _release(),
+      onPointerCancel: (_) => _release(),
+      child: SizedBox(
+        height: 56,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(color: cx.danger),
+              AnimatedBuilder(
+                animation: _c,
+                builder: (_, _) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: _c.value,
+                    heightFactor: 1,
+                    child: ColoredBox(
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+              ),
+              Center(
+                child: Text(
+                  'STOP',
+                  style: TextStyle(
+                    color: cx.onAccent,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Status pill with a leading dot (e.g. "● ACQUIRING GPS…") shown in place of
+/// the speed number.
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({
+    required this.label,
+    required this.dotColor,
+    required this.textColor,
+    required this.borderColor,
+  });
+
+  final String label;
+  final Color dotColor;
+  final Color textColor;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 14,
+              letterSpacing: 1,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small outlined status pill (PAUSED / GET READY) shown under the hero number.
+class _OutlinePill extends StatelessWidget {
+  const _OutlinePill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          letterSpacing: 1.5,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -899,16 +869,20 @@ class _Metric extends StatelessWidget {
       child: Column(
         children: [
           Text(label,
-              style: TextStyle(color: cx.textDim, fontSize: 11)),
-          const SizedBox(height: 6),
+              style: TextStyle(
+                  color: cx.textDim, fontSize: 11, letterSpacing: 0.5)),
+          const SizedBox(height: 5),
           Text(value,
               style: TextStyle(
-                  color: color ?? cx.accentInk,
+                  color: color ?? cx.textBright,
                   fontSize: 20,
                   fontWeight: FontWeight.w700)),
           if (unit.isNotEmpty)
-            Text(unit,
-                style: TextStyle(color: cx.textDim, fontSize: 10)),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(unit,
+                  style: TextStyle(color: cx.textDim, fontSize: 11)),
+            ),
         ],
       ),
     );

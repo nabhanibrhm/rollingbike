@@ -4,7 +4,7 @@ import '../data/database_service.dart';
 import '../services/tile_cache_service.dart';
 import '../services/tracking_service.dart';
 import '../theme/app_theme.dart';
-import 'tracking_map_screen.dart';
+import 'home_shell.dart';
 
 /// Branded startup screen. Runs the app bootstrap (open the DB, register the
 /// background tracking service) while showing a pulsing neon wordmark, then
@@ -42,7 +42,7 @@ class _SplashScreenState extends State<SplashScreen>
       ]);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const TrackingMapScreen()),
+        MaterialPageRoute(builder: (_) => const HomeShell()),
       );
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
