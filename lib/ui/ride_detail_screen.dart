@@ -85,6 +85,7 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
     if (points == null) return; // track still loading — button is disabled
     final action = await _showShareOptions();
     if (action == null || !mounted) return;
+    final unit = ref.read(speedUnitProvider);
 
     setState(() => _sharing = true);
     try {
@@ -93,12 +94,14 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
           context: context,
           ride: widget.ride,
           points: points,
+          unit: unit,
         );
       } else {
         await RideShare.saveToGallery(
           context: context,
           ride: widget.ride,
           points: points,
+          unit: unit,
         );
         if (mounted) _showMessage('Saved to your gallery.');
       }

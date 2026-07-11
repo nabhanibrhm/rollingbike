@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../core/units.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
 
@@ -13,24 +14,31 @@ import '../data/models/track_point.dart';
 /// is offline-first, so the route is drawn as a vector polyline instead; no
 /// background panel either — like Strava's sticker, nothing here should block
 /// a photo or video the rider places behind it in Instagram), in
-/// RollingBike's own mint/coral brand palette rather than Strava's orange.
+/// RollingBike's amber brand palette.
 ///
 /// Every piece of text carries a dark drop shadow (in place of a solid panel)
 /// so it stays legible over whatever ends up behind the sticker.
 ///
 /// It is deliberately styled independently of the app's light/dark theme: the
-/// shared image always uses the dark neon brand look so it reads the same for
-/// everyone, whatever theme the sharer happens to be in.
+/// shared image always uses the dark amber brand look so it reads the same for
+/// everyone, whatever theme the sharer happens to be in. Speeds and distances
+/// still honour the rider's [unit] choice.
 class ShareCard extends StatelessWidget {
-  const ShareCard({super.key, required this.ride, required this.points});
+  const ShareCard({
+    super.key,
+    required this.ride,
+    required this.points,
+    required this.unit,
+  });
 
   final Ride ride;
   final List<TrackPoint> points;
+  final SpeedUnit unit;
 
   // Brand colours, fixed for the shared artwork.
-  static const _mint = Color(0xFF83FFE6);
-  static const _coral = Color(0xFFFF5F5F);
-  static const _ink = Color(0xFFFCFCFC);
+  static const _amber = Color(0xFFFFB22C);
+  static const _red = Color(0xFFEF4444);
+  static const _ink = Color(0xFFF2F2F0);
   static const _dim = Color(0xFFD8D8D8);
 
   /// Stands in for a background panel: keeps text readable over an arbitrary
@@ -44,11 +52,14 @@ class ShareCard extends StatelessWidget {
     final title = ride.name?.trim().isNotEmpty == true
         ? ride.name!.trim()
         : 'Untitled ride';
-    final pace = _fmtPace(ride.movingSeconds, ride.totalDistanceMeters);
+    final pace = _fmtPace(
+      ride.movingSeconds,
+      unit.distanceMeters(ride.totalDistanceMeters),
+    );
 
     return DefaultTextStyle(
       style: const TextStyle(
-        fontFamily: 'JetBrainsMono',
+        fontFamily: 'Inter',
         color: _ink,
         shadows: _textShadow,
       ),
@@ -63,15 +74,15 @@ class ShareCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
               child: Row(
                 children: [
-                  const Icon(Icons.two_wheeler,
-                      color: _mint, size: 20, shadows: _textShadow),
+                  const Icon(Icons.speed,
+                      color: _amber, size: 20, shadows: _textShadow),
                   const SizedBox(width: 8),
                   const Text(
                     'RollingBike',
                     style: TextStyle(
-                      color: _mint,
+                      color: _amber,
                       fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -107,7 +118,7 @@ class ShareCard extends StatelessWidget {
                 ),
               ),
             ),
-            _StatsPanel(ride: ride, pace: pace),
+            _StatsPanel(ride: ride, pace: pace, unit: unit),
           ],
         ),
       ),
@@ -119,10 +130,15 @@ class ShareCard extends StatelessWidget {
 /// the transparent canvas, same as Strava's sticker, relying on
 /// [ShareCard._textShadow] rather than a panel for legibility.
 class _StatsPanel extends StatelessWidget {
-  const _StatsPanel({required this.ride, required this.pace});
+  const _StatsPanel({
+    required this.ride,
+    required this.pace,
+    required this.unit,
+  });
 
   final Ride ride;
   final String pace;
+  final SpeedUnit unit;
 
   @override
   Widget build(BuildContext context) {
@@ -135,8 +151,10 @@ class _StatsPanel extends StatelessWidget {
             children: [
               _Stat(
                   label: 'DISTANCE',
-                  value: (ride.totalDistanceMeters / 1000).toStringAsFixed(2),
-                  unit: 'km'),
+                  value: unit
+                      .distanceMeters(ride.totalDistanceMeters)
+                      .toStringAsFixed(2),
+                  unit: unit.distanceLabel),
               _Stat(
                   label: 'TOTAL TIME',
                   value: _fmtDuration(ride.durationSeconds)),
@@ -150,14 +168,14 @@ class _StatsPanel extends StatelessWidget {
             children: [
               _Stat(
                   label: 'AVG SPEED',
-                  value: ride.averageSpeedKmh.toStringAsFixed(0),
-                  unit: 'km/h'),
+                  value: unit.speed(ride.averageSpeedKmh).toStringAsFixed(0),
+                  unit: unit.speedLabel),
               _Stat(
                   label: 'MAX SPEED',
-                  value: ride.maxSpeedKmh.toStringAsFixed(0),
-                  unit: 'km/h',
-                  color: ShareCard._coral),
-              _Stat(label: 'PACE', value: pace, unit: '/km'),
+                  value: unit.speed(ride.maxSpeedKmh).toStringAsFixed(0),
+                  unit: unit.speedLabel,
+                  color: ShareCard._red),
+              _Stat(label: 'PACE', value: pace, unit: '/${unit.distanceLabel}'),
             ],
           ),
           const SizedBox(height: 16),
@@ -176,7 +194,7 @@ class _Stat extends StatelessWidget {
     required this.label,
     required this.value,
     this.unit = '',
-    this.color = ShareCard._mint,
+    this.color = ShareCard._amber,
   });
 
   final String label;
@@ -197,10 +215,10 @@ class _Stat extends StatelessWidget {
             text: TextSpan(
               text: value,
               style: TextStyle(
-                fontFamily: 'JetBrainsMono',
+                fontFamily: 'Inter',
                 color: color,
                 fontSize: 18,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
                 shadows: ShareCard._textShadow,
               ),
               children: [
@@ -208,7 +226,7 @@ class _Stat extends StatelessWidget {
                   TextSpan(
                     text: ' $unit',
                     style: const TextStyle(
-                      fontFamily: 'JetBrainsMono',
+                      fontFamily: 'Inter',
                       color: ShareCard._dim,
                       fontSize: 9,
                       fontWeight: FontWeight.w400,
@@ -231,8 +249,8 @@ class _RoutePainter extends CustomPainter {
 
   final List<TrackPoint> points;
 
-  static const _mint = Color(0xFF83FFE6);
-  static const _coral = Color(0xFFFF5F5F);
+  static const _amber = Color(0xFFFFB22C);
+  static const _red = Color(0xFFEF4444);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -240,7 +258,7 @@ class _RoutePainter extends CustomPainter {
       // Nothing meaningful to draw — leave a subtle centred dot if we have one.
       if (points.length == 1) {
         canvas.drawCircle(size.center(Offset.zero), 4,
-            Paint()..color = _mint);
+            Paint()..color = _amber);
       }
       return;
     }
@@ -295,7 +313,7 @@ class _RoutePainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = _mint.withValues(alpha: 0.25)
+        ..color = _amber.withValues(alpha: 0.25)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round
@@ -305,16 +323,16 @@ class _RoutePainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = _mint
+        ..color = _amber
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.5
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // Start (mint) and end (coral) dots.
-    _dot(canvas, map(proj.first), _mint);
-    _dot(canvas, map(proj.last), _coral);
+    // Start (amber) and end (red) dots.
+    _dot(canvas, map(proj.first), _amber);
+    _dot(canvas, map(proj.last), _red);
   }
 
   void _dot(Canvas canvas, Offset c, Color color) {
@@ -323,7 +341,7 @@ class _RoutePainter extends CustomPainter {
         c,
         6,
         Paint()
-          ..color = const Color(0xFF0A0F0E)
+          ..color = const Color(0xFF0A0A0A)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.5);
   }
@@ -354,16 +372,15 @@ String _fmtDuration(int seconds) {
   return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
 }
 
-/// Pace in minutes:seconds per kilometer, based on moving time (so stops
-/// don't drag it down). '--:--' when there's not enough distance to be
-/// meaningful.
-String _fmtPace(int movingSeconds, double distanceMeters) {
-  final km = distanceMeters / 1000.0;
-  if (km < 0.05 || movingSeconds <= 0) return '--:--';
-  final secPerKm = movingSeconds / km;
-  if (!secPerKm.isFinite) return '--:--';
-  var mm = secPerKm ~/ 60;
-  var ss = (secPerKm % 60).round();
+/// Pace in minutes:seconds per displayed distance unit (km or mi), based on
+/// moving time (so stops don't drag it down). '--:--' when there's not enough
+/// distance to be meaningful.
+String _fmtPace(int movingSeconds, double displayDistance) {
+  if (displayDistance < 0.05 || movingSeconds <= 0) return '--:--';
+  final secPerUnit = movingSeconds / displayDistance;
+  if (!secPerUnit.isFinite) return '--:--';
+  var mm = secPerUnit ~/ 60;
+  var ss = (secPerUnit % 60).round();
   if (ss == 60) {
     ss = 0;
     mm += 1;

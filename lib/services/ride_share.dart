@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../core/units.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
 import '../ui/share_card.dart';
@@ -34,17 +35,18 @@ class RideShare {
   static const _pixelRatio = 3.0; // → 1080 × 1920 PNG
 
   /// Instagram Story background gradient painted behind the transparent sticker.
-  static const _topBackgroundColor = '#123A34';
+  static const _topBackgroundColor = '#241A05';
   static const _bottomBackgroundColor = '#0A0A0A';
 
   static Future<Uint8List> _renderPng(
     BuildContext context,
     Ride ride,
     List<TrackPoint> points,
+    SpeedUnit unit,
   ) {
     return captureWidgetToPng(
       context,
-      child: ShareCard(ride: ride, points: points),
+      child: ShareCard(ride: ride, points: points, unit: unit),
       logicalSize: _canvas,
       pixelRatio: _pixelRatio,
     );
@@ -72,8 +74,9 @@ class RideShare {
     required BuildContext context,
     required Ride ride,
     required List<TrackPoint> points,
+    required SpeedUnit unit,
   }) async {
-    final pngBytes = await _renderPng(context, ride, points);
+    final pngBytes = await _renderPng(context, ride, points, unit);
     final file = await _writeToCache(ride, pngBytes);
 
     // Hand off to the Android host, which builds the content:// URI via
@@ -101,8 +104,9 @@ class RideShare {
     required BuildContext context,
     required Ride ride,
     required List<TrackPoint> points,
+    required SpeedUnit unit,
   }) async {
-    final pngBytes = await _renderPng(context, ride, points);
+    final pngBytes = await _renderPng(context, ride, points, unit);
     final file = await _writeToCache(ride, pngBytes);
 
     try {

@@ -70,6 +70,8 @@ class _SplashScreenState extends State<SplashScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            Icon(Icons.speed, size: 52, color: cx.accentInk),
+            const SizedBox(height: 18),
             AnimatedBuilder(
               animation: _glow,
               builder: (context, _) {
