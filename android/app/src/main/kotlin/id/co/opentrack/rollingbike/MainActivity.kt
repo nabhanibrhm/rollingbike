@@ -1,4 +1,4 @@
-package id.co.smma.rollingbike
+package id.co.opentrack.rollingbike
 
 import android.content.ActivityNotFoundException
 import android.content.ContentValues
@@ -15,7 +15,7 @@ import java.io.IOException
 
 class MainActivity : FlutterActivity() {
 
-    private val channelName = "id.co.smma.rollingbike/share"
+    private val channelName = "id.co.opentrack.rollingbike/share"
     private val instagramPackage = "com.instagram.android"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

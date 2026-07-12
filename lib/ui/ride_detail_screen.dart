@@ -298,7 +298,7 @@ class _RouteMap extends StatelessWidget {
         TileLayer(
           urlTemplate: basemapUrl(cx.isDark),
           subdomains: const ['a', 'b', 'c', 'd'],
-          userAgentPackageName: 'id.co.smma.rollingbike',
+          userAgentPackageName: 'id.co.opentrack.rollingbike',
           tileProvider: NetworkTileProvider(silenceExceptions: true),
         ),
         if (route.length >= 2)
@@ -358,7 +358,7 @@ class _BaseMap extends StatelessWidget {
         TileLayer(
           urlTemplate: basemapUrl(cx.isDark),
           subdomains: const ['a', 'b', 'c', 'd'],
-          userAgentPackageName: 'id.co.smma.rollingbike',
+          userAgentPackageName: 'id.co.opentrack.rollingbike',
           tileProvider: NetworkTileProvider(silenceExceptions: true),
         ),
       ],

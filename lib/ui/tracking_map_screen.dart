@@ -154,7 +154,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                 TileLayer(
                   urlTemplate: basemapUrl(cx.isDark),
                   subdomains: const ['a', 'b', 'c', 'd'],
-                  userAgentPackageName: 'id.co.smma.rollingbike',
+                  userAgentPackageName: 'id.co.opentrack.rollingbike',
                   // Offline-first: swallow fetch failures (no error spam / red
                   // tiles when there's no signal) and serve from the persistent
                   // disk cache configured in TileCacheService.

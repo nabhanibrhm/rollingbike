@@ -28,7 +28,7 @@ enum ShareOutcome {
 class RideShare {
   RideShare._();
 
-  static const _channel = MethodChannel('id.co.smma.rollingbike/share');
+  static const _channel = MethodChannel('id.co.opentrack.rollingbike/share');
 
   /// The 9:16 sticker canvas the card is centred within, and its output density.
   static const _canvas = Size(360, 640);
