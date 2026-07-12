@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/history_providers.dart';
 import '../theme/app_theme.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -11,14 +13,16 @@ import 'tracking_map_screen.dart';
 /// The tabs live in an [IndexedStack] so each keeps its state when the rider
 /// switches away and back — critically, the Record tab keeps the live map and
 /// an in-progress ride alive while the rider peeks at History or Settings.
-class HomeShell extends StatefulWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell> {
+  static const int _historyTab = 1;
+
   int _index = 0;
 
   static const _tabs = <_TabSpec>[
@@ -26,6 +30,15 @@ class _HomeShellState extends State<HomeShell> {
     _TabSpec(icon: Icons.history, label: 'History'),
     _TabSpec(icon: Icons.tune, label: 'Settings'),
   ];
+
+  /// Switches tabs. Entering History forces a refetch of the ride list: the
+  /// tabs live in an [IndexedStack], so [HistoryScreen] never unmounts and its
+  /// `autoDispose` provider would otherwise keep serving the snapshot it read
+  /// at launch — never showing rides saved since (the original save bug).
+  void _onSelectTab(int i) {
+    if (i == _historyTab) ref.invalidate(rideHistoryProvider);
+    setState(() => _index = i);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +56,7 @@ class _HomeShellState extends State<HomeShell> {
       bottomNavigationBar: _BottomNav(
         tabs: _tabs,
         index: _index,
-        onSelect: (i) => setState(() => _index = i),
+        onSelect: _onSelectTab,
       ),
     );
   }
