@@ -1,5 +1,5 @@
 name: rollingbike
-description: "Offline-first riding telemetry tracker — Black Neon."
+description: "Offline-first riding telemetry tracker."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -46,9 +46,24 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   isar_community_generator: 3.3.2     # must match isar_community version above
+  flutter_launcher_icons: ^0.14.1     # regenerates Android launcher icons from assets/icon
+
+# Launcher icon generation (Android only — iOS intentionally left untouched).
+#   Regenerate with:  dart run flutter_launcher_icons
+# Adaptive icon = transparent speedometer foreground over the brand near-black.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/logo_legacy.png"              # legacy (pre-API 26) square icon
+  adaptive_icon_foreground: "assets/icon/logo_foreground.png"  # mark pre-scaled + centered
+  adaptive_icon_background: "#0A0A0A"
+  adaptive_icon_foreground_inset: 0                      # padding is baked into the asset
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/icon/logo_transparent.png
 
   # Inter (the app's UI face, matching the design prototype) bundled locally
   # for offline-first typography (see app_theme).
