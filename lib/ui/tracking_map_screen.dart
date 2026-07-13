@@ -1,17 +1,20 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../core/record_view.dart';
 import '../core/units.dart';
 import '../providers/settings_providers.dart';
 import '../providers/tracking_providers.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
 import 'ride_summary_screen.dart';
+import 'speed_distance_chart.dart';
 
 /// CartoDB basemap URL for the given brightness — dark tiles on the dark theme,
 /// light tiles on the light theme.
@@ -36,23 +39,20 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
 
   bool _mapReady = false;
 
-  /// The live map is hidden by default to save battery — the map + its blur are
-  /// the dominant power draw, and recording runs in the background service
-  /// regardless of what's on screen. The rider taps "Map" to see it on demand.
-  bool _showMap = false;
-
   /// The rider's last known position while idle (before/without a ride), used
   /// to center the map on open and show a "you are here" marker.
   LatLng? _myLocation;
   bool _locating = false;
 
-  /// Reveals / hides the live map. When hidden, the FlutterMap widget is not
-  /// built at all (no tile fetches, no per-frame blur, no camera work).
-  void _toggleMap() {
-    setState(() {
-      _showMap = !_showMap;
-      if (!_showMap) _mapReady = false; // controller detaches with the widget
-    });
+  /// Advances the backdrop view map → chart → none → map (the choice is
+  /// persisted via [recordViewProvider]). Leaving the map tears down the
+  /// FlutterMap widget, so its controller detaches — reset [_mapReady].
+  void _cycleView() {
+    final next = ref.read(recordViewProvider).next;
+    if (next != RecordView.map) {
+      setState(() => _mapReady = false);
+    }
+    ref.read(recordViewProvider.notifier).cycle();
   }
 
   /// Fetches the current position, centers the map on it, and drops the idle
@@ -100,12 +100,17 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
   Widget build(BuildContext context) {
     final cx = AppColors.of(context);
     final state = ref.watch(trackingControllerProvider);
+    final view = ref.watch(recordViewProvider);
+    final unit = ref.watch(speedUnitProvider);
 
     // Follow the rider (only while the map is actually on screen), present the
     // post-ride summary, and surface errors.
     ref.listen<TrackingUiState>(trackingControllerProvider, (prev, next) {
       final t = next.telemetry;
-      if (_showMap && _mapReady && t?.lat != null && t?.lon != null) {
+      if (ref.read(recordViewProvider) == RecordView.map &&
+          _mapReady &&
+          t?.lat != null &&
+          t?.lon != null) {
         _mapController.move(LatLng(t!.lat!, t.lon!), _mapController.camera.zoom);
       }
       // A ride just finished → open the summary screen once.
@@ -135,9 +140,10 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
       backgroundColor: cx.canvas,
       body: Stack(
         children: [
-          // Base layer: the live map on demand, or a lightweight stats backdrop
-          // that keeps the GPU idle and lets the screen sleep to save battery.
-          if (_showMap)
+          // Base layer: the live map on demand, a lightweight live chart, or a
+          // static stats backdrop that keeps the GPU idle and lets the screen
+          // sleep to save battery.
+          if (view == RecordView.map)
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
@@ -183,34 +189,37 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                   ),
               ],
             )
+          else if (view == RecordView.chart)
+            Positioned.fill(child: _ChartBackdrop(state: state, unit: unit))
           else
             Positioned.fill(
-              child: _StatsBackdrop(state: state, onShowMap: _toggleMap),
+              child: _StatsBackdrop(state: state, onShowMap: _cycleView),
             ),
-          if (_showMap) const _MapAttribution(),
+          if (view == RecordView.map) const _MapAttribution(),
           Align(
             alignment: Alignment.bottomCenter,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Hide-map (left) + recenter (right) float just above the sheet
-                // only while the map is on screen. When it's hidden, the
-                // backdrop carries its own centered "Show map" pill instead.
-                if (_showMap)
+                // View-cycle (left) + recenter (right) float just above the
+                // sheet while the map or chart is on screen. In the hidden
+                // state the backdrop carries its own centered "Show map" pill.
+                if (view != RecordView.none)
                   Padding(
                     padding:
                         const EdgeInsets.only(left: 16, right: 16, bottom: 12),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        _MapToggleButton(showMap: _showMap, onTap: _toggleMap),
-                        _LocateButton(busy: _locating, onTap: _locateMe),
+                        _ViewToggleButton(view: view, onTap: _cycleView),
+                        if (view == RecordView.map)
+                          _LocateButton(busy: _locating, onTap: _locateMe),
                       ],
                     ),
                   ),
                 _TelemetrySheet(
                   state: state,
-                  unit: ref.watch(speedUnitProvider),
+                  unit: unit,
                   onStart: () =>
                       ref.read(trackingControllerProvider.notifier).start(),
                   onStop: () =>
@@ -328,17 +337,23 @@ class _LocateButton extends StatelessWidget {
   }
 }
 
-/// Glass pill that reveals / hides the live map. Mirrors the locate button's
-/// styling; sits to the left of it above the telemetry sheet.
-class _MapToggleButton extends StatelessWidget {
-  const _MapToggleButton({required this.showMap, required this.onTap});
+/// Glass pill that cycles the backdrop view (map → chart → none). Shows the
+/// current view's icon + label; tapping advances to the next. Mirrors the
+/// locate button's styling; sits to its left above the telemetry sheet.
+class _ViewToggleButton extends StatelessWidget {
+  const _ViewToggleButton({required this.view, required this.onTap});
 
-  final bool showMap;
+  final RecordView view;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cx = AppColors.of(context);
+    final (IconData icon, String label) = switch (view) {
+      RecordView.map => (Icons.map, 'Map'),
+      RecordView.chart => (Icons.show_chart, 'Chart'),
+      RecordView.none => (Icons.visibility_off_outlined, 'Hidden'),
+    };
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
@@ -359,16 +374,82 @@ class _MapToggleButton extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(showMap ? Icons.map : Icons.map_outlined,
-                      color: cx.accentInk, size: 20),
+                  Icon(icon, color: cx.accentInk, size: 20),
                   const SizedBox(width: 8),
-                  Text(showMap ? 'Hide map' : 'Map',
+                  Text(label,
                       style: TextStyle(
                           color: cx.accentInk, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Backdrop shown when the view is [RecordView.chart]: a live speed-vs-distance
+/// line chart built from the ride's accumulated samples. Draws no tiles/blur,
+/// so — like [_StatsBackdrop] — the GPU stays idle. Shows a branded empty-state
+/// until there are enough samples to plot.
+class _ChartBackdrop extends StatelessWidget {
+  const _ChartBackdrop({required this.state, required this.unit});
+
+  final TrackingUiState state;
+  final SpeedUnit unit;
+
+  @override
+  Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
+    final samples = state.speedSamples;
+
+    if (samples.length < 2) {
+      return Container(
+        color: cx.canvas,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.show_chart, size: 56, color: cx.accentInk),
+              const SizedBox(height: 18),
+              Text(
+                'Speed / distance',
+                style: TextStyle(
+                  color: cx.accentInk,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 48),
+                child: Text(
+                  state.phase == 'recording'
+                      ? 'Charting your speed as you cover distance…'
+                      : 'Your live speed vs. distance chart appears here as you ride.',
+                  textAlign: TextAlign.center,
+                  style:
+                      TextStyle(color: cx.textDim, fontSize: 14, height: 1.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final spots = [
+      for (final s in samples)
+        FlSpot(s.distanceMeters / 1000.0, s.speedKmh),
+    ];
+    return Container(
+      color: cx.canvas,
+      child: SafeArea(
+        child: SpeedDistanceChart(
+          spots: spots,
+          avgSpeedKmh: state.telemetry?.avgSpeedKmh ?? 0,
+          unit: unit,
         ),
       ),
     );

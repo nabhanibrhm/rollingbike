@@ -1,8 +1,10 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../core/geo.dart';
 import '../core/units.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
@@ -10,6 +12,7 @@ import '../providers/history_providers.dart';
 import '../providers/settings_providers.dart';
 import '../services/ride_share.dart';
 import '../theme/app_theme.dart';
+import 'speed_distance_chart.dart';
 import 'tracking_map_screen.dart' show basemapUrl;
 
 /// The two ways a rendered ride card can be sent off.
@@ -236,9 +239,21 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
           ),
           Expanded(
             child: SingleChildScrollView(
-              child: _SummaryPanel(
-                ride: widget.ride,
-                unit: ref.watch(speedUnitProvider),
+              child: Column(
+                children: [
+                  _SummaryPanel(
+                    ride: widget.ride,
+                    unit: ref.watch(speedUnitProvider),
+                  ),
+                  // Speed-vs-distance chart from the recorded track (needs at
+                  // least two points to plot a line).
+                  if ((trackAsync.valueOrNull?.length ?? 0) >= 2)
+                    _RideChart(
+                      points: trackAsync.value!,
+                      avgSpeedKmh: widget.ride.averageSpeedKmh,
+                      unit: ref.watch(speedUnitProvider),
+                    ),
+                ],
               ),
             ),
           ),
@@ -379,10 +394,8 @@ class _SummaryPanel extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: cx.canvas,
-      padding: const EdgeInsets.fromLTRB(22, 24, 22, 24),
-      child: SafeArea(
-        top: false,
-        child: Column(
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 8),
+      child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -446,6 +459,53 @@ class _SummaryPanel extends StatelessWidget {
               ],
             ),
           ],
+        ),
+    );
+  }
+}
+
+/// Speed-vs-distance chart for a saved ride, built from its recorded track
+/// points: cumulative Haversine distance on x, per-fix ground speed on y.
+class _RideChart extends StatelessWidget {
+  const _RideChart({
+    required this.points,
+    required this.avgSpeedKmh,
+    required this.unit,
+  });
+
+  final List<TrackPoint> points;
+  final double avgSpeedKmh;
+  final SpeedUnit unit;
+
+  @override
+  Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
+    final spots = <FlSpot>[];
+    var distMeters = 0.0;
+    for (var i = 0; i < points.length; i++) {
+      if (i > 0) {
+        distMeters += haversineMeters(
+          points[i - 1].latitude,
+          points[i - 1].longitude,
+          points[i].latitude,
+          points[i].longitude,
+        );
+      }
+      spots.add(FlSpot(distMeters / 1000.0, points[i].speedMps * 3.6));
+    }
+
+    return Container(
+      width: double.infinity,
+      color: cx.canvas,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 260,
+          child: SpeedDistanceChart(
+            spots: spots,
+            avgSpeedKmh: avgSpeedKmh,
+            unit: unit,
+          ),
         ),
       ),
     );

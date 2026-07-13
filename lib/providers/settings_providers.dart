@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/record_view.dart';
 import '../core/units.dart';
 import '../services/settings_service.dart';
 
@@ -46,4 +47,26 @@ class SpeedUnitController extends StateNotifier<SpeedUnit> {
 final speedUnitProvider =
     StateNotifierProvider<SpeedUnitController, SpeedUnit>(
   (ref) => SpeedUnitController(SpeedUnit.kmh),
+);
+
+/// Holds the Record screen's backdrop view (map / chart / none) and persists
+/// every change.
+class RecordViewController extends StateNotifier<RecordView> {
+  RecordViewController(super.state);
+
+  Future<void> set(RecordView view) async {
+    if (view == state) return;
+    state = view;
+    await SettingsService.instance.saveRecordView(view);
+  }
+
+  /// Advance to the next view in the cycle map → chart → none → map.
+  Future<void> cycle() => set(state.next);
+}
+
+/// The Record screen's backdrop view. Seeded in `main()` (via override) with
+/// the persisted value so the last-used view is shown without a flash.
+final recordViewProvider =
+    StateNotifierProvider<RecordViewController, RecordView>(
+  (ref) => RecordViewController(RecordView.none),
 );

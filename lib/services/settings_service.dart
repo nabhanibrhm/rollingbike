@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../core/record_view.dart';
 import '../core/units.dart';
 import 'location_source.dart';
 
@@ -19,6 +20,7 @@ class SettingsService {
   static const _fileName = 'settings.txt';
   static const _gpsSourceFileName = 'gps_source.txt';
   static const _speedUnitFileName = 'speed_unit.txt';
+  static const _recordViewFileName = 'record_view.txt';
 
   File? _file;
 
@@ -100,6 +102,28 @@ class SettingsService {
     try {
       final f = await _resolveNamed(_speedUnitFileName);
       await f.writeAsString(unit.tag);
+    } catch (_) {
+      // best-effort; the choice still applies for this session
+    }
+  }
+
+  /// Loads the Record screen's backdrop view. Defaults to [RecordView.none]
+  /// (map hidden — the battery-saving default) on first run or any read error.
+  Future<RecordView> loadRecordView() async {
+    try {
+      final f = await _resolveNamed(_recordViewFileName);
+      if (!await f.exists()) return RecordView.none;
+      return RecordView.fromTag((await f.readAsString()).trim());
+    } catch (_) {
+      return RecordView.none;
+    }
+  }
+
+  /// Persists the Record backdrop view. Best-effort.
+  Future<void> saveRecordView(RecordView view) async {
+    try {
+      final f = await _resolveNamed(_recordViewFileName);
+      await f.writeAsString(view.tag);
     } catch (_) {
       // best-effort; the choice still applies for this session
     }

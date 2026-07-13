@@ -30,6 +30,9 @@ dependencies:
   flutter_map: ^8.3.0                 # v8 API (differs from older flutter_map tutorials)
   latlong2: ^0.9.1
 
+  # --- Charts ---
+  fl_chart: ^0.69.0                   # live + saved-ride speed-vs-distance line chart
+
   # --- Permissions (background location, notifications) ---
   permission_handler: ^11.3.1
 

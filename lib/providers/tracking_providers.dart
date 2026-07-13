@@ -11,6 +11,15 @@ import '../services/tracking_service.dart';
 final trackingServiceProvider =
     Provider<TrackingService>((ref) => TrackingService.instance);
 
+/// One (distance, speed) sample for the live speed-vs-distance chart, captured
+/// per accepted fix while recording. Distance in meters, speed in km/h (metric
+/// internally; the chart shows no numbers so units don't affect its shape).
+class SpeedSample {
+  const SpeedSample(this.distanceMeters, this.speedKmh);
+  final double distanceMeters;
+  final double speedKmh;
+}
+
 /// Immutable UI state for the tracking screen.
 class TrackingUiState {
   const TrackingUiState({
@@ -20,6 +29,7 @@ class TrackingUiState {
     this.countdown = 0,
     this.telemetry,
     this.route = const [],
+    this.speedSamples = const [],
     this.lastFinished,
     this.error,
   });
@@ -35,6 +45,9 @@ class TrackingUiState {
   final int countdown;
   final LiveTelemetry? telemetry;
   final List<LatLng> route;
+
+  /// Per-fix (distance, speed) samples for the live chart, in capture order.
+  final List<SpeedSample> speedSamples;
   final LiveTelemetry? lastFinished;
   final String? error;
 
@@ -45,6 +58,7 @@ class TrackingUiState {
     int? countdown,
     LiveTelemetry? telemetry,
     List<LatLng>? route,
+    List<SpeedSample>? speedSamples,
     LiveTelemetry? lastFinished,
     String? error,
     bool clearTelemetry = false,
@@ -58,6 +72,7 @@ class TrackingUiState {
       countdown: countdown ?? this.countdown,
       telemetry: clearTelemetry ? null : (telemetry ?? this.telemetry),
       route: route ?? this.route,
+      speedSamples: speedSamples ?? this.speedSamples,
       lastFinished: clearFinished ? null : (lastFinished ?? this.lastFinished),
       error: clearError ? null : (error ?? this.error),
     );
@@ -80,6 +95,7 @@ class TrackingController extends StateNotifier<TrackingUiState> {
 
   void _onTelemetry(LiveTelemetry t) {
     var route = state.route;
+    var samples = state.speedSamples;
     // Telemetry now ticks once a second, re-sending the last known coords; only
     // extend the polyline when the position actually changed (a real new fix).
     if (t.lat != null && t.lon != null) {
@@ -89,6 +105,11 @@ class TrackingController extends StateNotifier<TrackingUiState> {
           last.latitude != point.latitude ||
           last.longitude != point.longitude) {
         route = [...route, point];
+        // Capture a chart sample on each real new fix while recording (distance
+        // only advances then; acquiring/countdown fixes carry no distance).
+        if (t.phase == 'recording') {
+          samples = [...samples, SpeedSample(t.distanceMeters, t.speedKmh)];
+        }
       }
     }
     state = state.copyWith(
@@ -98,6 +119,7 @@ class TrackingController extends StateNotifier<TrackingUiState> {
       countdown: t.countdown,
       telemetry: t,
       route: route,
+      speedSamples: samples,
     );
   }
 
@@ -115,6 +137,7 @@ class TrackingController extends StateNotifier<TrackingUiState> {
       phase: 'idle',
       countdown: 0,
       route: const [],
+      speedSamples: const [],
       clearTelemetry: true,
       error: reason,
     );
@@ -134,6 +157,7 @@ class TrackingController extends StateNotifier<TrackingUiState> {
       phase: 'acquiring',
       countdown: 0,
       route: const [],
+      speedSamples: const [],
       clearTelemetry: true,
       clearFinished: true,
       clearError: true,
@@ -185,6 +209,7 @@ class TrackingController extends StateNotifier<TrackingUiState> {
       phase: 'idle',
       countdown: 0,
       route: const [],
+      speedSamples: const [],
       clearTelemetry: true,
       clearFinished: true,
     );

@@ -13,11 +13,14 @@ Future<void> main() async {
   // SplashScreen so the branded loader is visible while it happens.
   final mode = await SettingsService.instance.loadThemeMode();
   final unit = await SettingsService.instance.loadSpeedUnit();
+  final recordView = await SettingsService.instance.loadRecordView();
   runApp(
     ProviderScope(
       overrides: [
         themeModeProvider.overrideWith((ref) => ThemeModeController(mode)),
         speedUnitProvider.overrideWith((ref) => SpeedUnitController(unit)),
+        recordViewProvider
+            .overrideWith((ref) => RecordViewController(recordView)),
       ],
       child: const RollingBikeApp(),
     ),
