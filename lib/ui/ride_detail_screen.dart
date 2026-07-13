@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../core/geo.dart';
+import '../core/speed_palette.dart';
 import '../core/units.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
@@ -234,7 +235,10 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                   style: TextStyle(color: cx.dangerInk),
                 ),
               ),
-              data: (points) => _RouteMap(points: points),
+              data: (points) => _RouteMap(
+                points: points,
+                unit: ref.watch(speedUnitProvider),
+              ),
             ),
           ),
           Expanded(
@@ -266,9 +270,15 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
 /// The map with the recorded route + start/end markers. Falls back to a
 /// message when the ride has no recorded fixes.
 class _RouteMap extends StatelessWidget {
-  const _RouteMap({required this.points});
+  const _RouteMap({required this.points, required this.unit});
 
   final List<TrackPoint> points;
+  final SpeedUnit unit;
+
+  /// Number of quantized speed→color bands. Consecutive segments in the same
+  /// band merge into one polyline (run-length), so a steady cruise draws a few
+  /// polylines instead of one-per-fix while keeping the exact geometry.
+  static const int _bands = 26;
 
   @override
   Widget build(BuildContext context) {
@@ -291,46 +301,94 @@ class _RouteMap extends StatelessWidget {
       );
     }
 
-    return FlutterMap(
-      options: MapOptions(
-        backgroundColor: cx.canvas,
-        initialCenter: route.first,
-        initialZoom: 15,
-        // Fit the whole recorded route in view. A single-point ride keeps the
-        // initialCenter/zoom above (coordinates fit needs >= 2 to size).
-        initialCameraFit: route.length >= 2
-            ? CameraFit.coordinates(
-                coordinates: route,
-                padding: const EdgeInsets.all(48),
-                maxZoom: 17,
-              )
-            : null,
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-        ),
-      ),
+    final speeds = [for (final p in points) p.speedMps * 3.6]; // km/h
+    final maxSpeed = speeds.fold(0.0, (m, s) => s > m ? s : m);
+    final segments = _speedSegments(route, speeds, maxSpeed);
+
+    return Stack(
       children: [
-        TileLayer(
-          urlTemplate: basemapUrl(cx.isDark),
-          subdomains: const ['a', 'b', 'c', 'd'],
-          userAgentPackageName: 'id.co.opentrack.rollingbike',
-          tileProvider: NetworkTileProvider(silenceExceptions: true),
-        ),
-        if (route.length >= 2)
-          PolylineLayer(
-            polylines: [
-              Polyline(points: route, strokeWidth: 5, color: cx.accentInk),
-            ],
+        FlutterMap(
+          options: MapOptions(
+            backgroundColor: cx.canvas,
+            initialCenter: route.first,
+            initialZoom: 15,
+            // Fit the whole recorded route in view. A single-point ride keeps
+            // the initialCenter/zoom above (coordinates fit needs >= 2).
+            initialCameraFit: route.length >= 2
+                ? CameraFit.coordinates(
+                    coordinates: route,
+                    padding: const EdgeInsets.all(48),
+                    maxZoom: 17,
+                  )
+                : null,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+            ),
           ),
-        MarkerLayer(
-          markers: [
-            _endpointMarker(route.first, cx.accent), // start
-            if (route.length >= 2)
-              _endpointMarker(route.last, cx.danger), // end
+          children: [
+            TileLayer(
+              urlTemplate: basemapUrl(cx.isDark),
+              subdomains: const ['a', 'b', 'c', 'd'],
+              userAgentPackageName: 'id.co.opentrack.rollingbike',
+              tileProvider: NetworkTileProvider(silenceExceptions: true),
+            ),
+            if (segments.isNotEmpty) PolylineLayer(polylines: segments),
+            MarkerLayer(
+              markers: [
+                _endpointMarker(route.first, cx.accent), // start
+                if (route.length >= 2)
+                  _endpointMarker(route.last, cx.danger), // end
+              ],
+            ),
           ],
         ),
+        if (maxSpeed > 0)
+          Positioned(
+            left: 12,
+            bottom: 12,
+            child: _SpeedLegend(maxSpeedKmh: maxSpeed, unit: unit),
+          ),
       ],
     );
+  }
+
+  /// Builds one polyline per run of consecutive segments sharing a speed band,
+  /// colored via [SpeedPalette]. Each run reuses the previous run's boundary
+  /// vertex so the colored line stays continuous (no gaps at band changes).
+  List<Polyline> _speedSegments(
+    List<LatLng> route,
+    List<double> speeds,
+    double maxSpeed,
+  ) {
+    if (route.length < 2) return const [];
+    int bandOf(int seg) {
+      // Segment `seg` joins route[seg-1]→route[seg]; color by its mean speed.
+      final s = (speeds[seg - 1] + speeds[seg]) / 2;
+      final t = maxSpeed <= 0 ? 0.0 : (s / maxSpeed).clamp(0.0, 1.0);
+      return (t * (_bands - 1)).round();
+    }
+
+    final out = <Polyline>[];
+    var runStart = 1; // first segment index
+    var runBand = bandOf(1);
+    void flush(int endSeg) {
+      out.add(Polyline(
+        points: route.sublist(runStart - 1, endSeg + 1),
+        strokeWidth: 5,
+        color: SpeedPalette.at(runBand / (_bands - 1)),
+      ));
+    }
+
+    for (var seg = 2; seg < route.length; seg++) {
+      final band = bandOf(seg);
+      if (band != runBand) {
+        flush(seg - 1);
+        runStart = seg;
+        runBand = band;
+      }
+    }
+    flush(route.length - 1);
+    return out;
   }
 
   Marker _endpointMarker(LatLng point, Color color) => Marker(
@@ -352,6 +410,73 @@ class _RouteMap extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Compact gradient scale explaining the speed-colored route: a Turbo bar from
+/// 0 to the ride's max speed, in the rider's chosen unit.
+class _SpeedLegend extends StatelessWidget {
+  const _SpeedLegend({required this.maxSpeedKmh, required this.unit});
+
+  final double maxSpeedKmh;
+  final SpeedUnit unit;
+
+  @override
+  Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
+    final labelStyle = TextStyle(
+      color: cx.textBright,
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+    );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      decoration: BoxDecoration(
+        color: cx.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cx.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('SPEED',
+              style: TextStyle(
+                color: cx.textDim,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+              )),
+          const SizedBox(height: 4),
+          Container(
+            width: 108,
+            height: 7,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              gradient: LinearGradient(
+                colors: SpeedPalette.gradient,
+                stops: SpeedPalette.gradientStops,
+              ),
+            ),
+          ),
+          const SizedBox(height: 3),
+          SizedBox(
+            width: 108,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('0', style: labelStyle),
+                Text(
+                  '${unit.speed(maxSpeedKmh).toStringAsFixed(0)} '
+                  '${unit.speedLabel}',
+                  style: labelStyle,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Tile-only map used behind the "no track" message.
@@ -505,6 +630,7 @@ class _RideChart extends StatelessWidget {
             spots: spots,
             avgSpeedKmh: avgSpeedKmh,
             unit: unit,
+            interactive: true,
           ),
         ),
       ),

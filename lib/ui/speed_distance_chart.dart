@@ -23,12 +23,18 @@ class SpeedDistanceChart extends StatelessWidget {
     required this.avgSpeedKmh,
     required this.unit,
     this.maxPoints = 240,
+    this.interactive = false,
   });
 
   final List<FlSpot> spots;
   final double avgSpeedKmh;
   final SpeedUnit unit;
   final int maxPoints;
+
+  /// When true, touching/dragging along the line snaps to the nearest data
+  /// point and shows a tooltip with that point's distance + speed. Off for the
+  /// live ride chart (no one pokes it mid-ride); on for the saved-ride detail.
+  final bool interactive;
 
   // Gutters around the plot: room for the axis-name + tick labels.
   static const double _gutterLeft = 46;
@@ -94,7 +100,61 @@ class SpeedDistanceChart extends StatelessWidget {
                         bottom: BorderSide(color: cx.accentInk, width: 3),
                       ),
                     ),
-                    lineTouchData: const LineTouchData(enabled: false),
+                    lineTouchData: interactive
+                        ? LineTouchData(
+                            enabled: true,
+                            touchTooltipData: LineTouchTooltipData(
+                              getTooltipColor: (_) => cx.surface,
+                              tooltipRoundedRadius: 8,
+                              tooltipBorder:
+                                  BorderSide(color: cx.accentInk, width: 1),
+                              tooltipPadding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              fitInsideHorizontally: true,
+                              fitInsideVertically: true,
+                              getTooltipItems: (touched) => [
+                                for (final s in touched)
+                                  LineTooltipItem(
+                                    '${unit.distanceKm(s.x).toStringAsFixed(2)} '
+                                    '${unit.distanceLabel}\n',
+                                    TextStyle(
+                                      color: cx.textDim,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    children: [
+                                      TextSpan(
+                                        text:
+                                            '${unit.speed(s.y).toStringAsFixed(0)} '
+                                            '${unit.speedLabel}',
+                                        style: TextStyle(
+                                          color: cx.textBright,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                            getTouchedSpotIndicator: (bar, indices) => [
+                              for (final _ in indices)
+                                TouchedSpotIndicatorData(
+                                  FlLine(color: cx.accentInk, strokeWidth: 1.5),
+                                  FlDotData(
+                                    show: true,
+                                    getDotPainter: (spot, a, b, c) =>
+                                        FlDotCirclePainter(
+                                      radius: 4,
+                                      color: cx.accent,
+                                      strokeWidth: 2,
+                                      strokeColor: cx.canvas,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          )
+                        : const LineTouchData(enabled: false),
                     clipData: const FlClipData.all(),
                     lineBarsData: [
                       LineChartBarData(
