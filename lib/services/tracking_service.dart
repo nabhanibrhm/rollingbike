@@ -24,6 +24,25 @@ const double _kMovingSpeedThresholdKmh = 3.0;
 /// updates alone then pull the estimate toward a standstill.
 const double _kDopplerMinSpeedMps = 1.0;
 
+/// Windowed-standstill guard. If the rider's net ground displacement over the
+/// last [_kStationaryWindowSeconds] implies a speed below [_kStationarySpeedKmh],
+/// the shown speed is snapped to 0 — killing the phantom "creep" both GPS
+/// pipelines report at a standstill (fused worst, up to ~4 km/h; raw ~1.4) so
+/// the gauge holds a rock-steady 0 at lights/stops. Source-independent: it works
+/// off positions, not the reported speed, so it hardens whichever pipeline runs.
+const double _kStationaryWindowSeconds = 5.0;
+const double _kStationarySpeedKmh = 3.0;
+
+/// Blackout threshold (seconds). If no usable fix arrives for this long while
+/// recording, GPS is treated as lost (tunnel / train / metal enclosure): the
+/// ride clock freezes (signal-loss auto-pause) and the next returning fix is
+/// re-anchored rather than bridged into distance — otherwise a far-away first
+/// fix after the dead zone adds a phantom straight-line segment and the paused
+/// wall-clock inflates the duration. Must sit well above the normal fix cadence
+/// (raw ~1.4 s, fused ~1 s) and above [_kSpeedStaleSeconds] so ordinary gaps
+/// between fixes don't trip it.
+const int _kSignalLossSeconds = 12;
+
 /// Discard fixes whose reported accuracy is worse than this (meters) — junk GPS
 /// that would otherwise add phantom distance and speed.
 const double _kMaxAccuracyMeters = 25.0;
@@ -252,6 +271,9 @@ Future<void> onStart(ServiceInstance service) async {
   // ticker eases down from on a gap, instead of recomputing off a value it
   // may itself already be decaying.
   var speedAtLastFix = 0.0;
+  // Rolling window of recent smoothed fixes (time, lat, lon) for the windowed
+  // standstill guard — see _kStationaryWindowSeconds.
+  final recentFixes = <(DateTime, double, double)>[];
   var movingSeconds = 0;
   var pointCount = 0;
   var rejectedStreak = 0;
@@ -268,6 +290,10 @@ Future<void> onStart(ServiceInstance service) async {
   var paused = false;
   DateTime? pauseStartedAt;
   var totalPaused = Duration.zero;
+  // Set while GPS is blacked out mid-ride (signal-loss auto-pause). While
+  // non-null the ride clock is frozen (see elapsedSeconds); its interval is
+  // banked into totalPaused and the marker cleared when a fix returns.
+  DateTime? signalLostAt;
   double? lastLat;
   double? lastLon;
   var lastFixAt = DateTime.now();
@@ -291,6 +317,10 @@ Future<void> onStart(ServiceInstance service) async {
     var pausedTotal = totalPaused;
     if (paused && pauseStartedAt != null) {
       pausedTotal += DateTime.now().difference(pauseStartedAt!);
+    }
+    // A signal blackout in progress freezes the clock the same way a pause does.
+    if (signalLostAt != null) {
+      pausedTotal += DateTime.now().difference(signalLostAt!);
     }
     final elapsed = DateTime.now().difference(startedAt!) - pausedTotal;
     return elapsed.isNegative ? 0 : elapsed.inSeconds;
@@ -388,6 +418,7 @@ Future<void> onStart(ServiceInstance service) async {
     maxSpeedKmh = 0;
     currentSpeedKmh = 0;
     speedAtLastFix = 0;
+    recentFixes.clear();
     movingSeconds = 0;
     pointCount = 0;
     rejectedStreak = 0;
@@ -397,6 +428,7 @@ Future<void> onStart(ServiceInstance service) async {
     lastLat = null;
     lastLon = null;
     lastFixAt = now;
+    signalLostAt = null;
     startedAt = now;
     ride = Ride()
       ..startTime = now
@@ -444,19 +476,28 @@ Future<void> onStart(ServiceInstance service) async {
     // The clock, speed decay, and moving-time only advance while recording —
     // during acquiring/countdown the tick just refreshes the UI/notification.
     if (phase == 'recording' && !paused) {
+      final sinceLastFixS =
+          DateTime.now().difference(lastFixAt).inMilliseconds / 1000.0;
+      // Signal-loss auto-pause: once fixes stop arriving for a full blackout
+      // window (tunnel / train dead-zone), freeze the ride clock by marking
+      // signalLostAt — elapsedSeconds() then excludes the ongoing gap, so the
+      // blackout no longer inflates duration/avg. Banked and cleared when a fix
+      // returns (see the re-anchor in the position stream).
+      if (sinceLastFixS >= _kSignalLossSeconds && signalLostAt == null) {
+        signalLostAt = DateTime.now();
+      }
       // Ease the shown speed to zero once fixes stop arriving for a while
       // (rider stopped — fixes largely cease at a standstill because of the
       // position stream's distance filter).
-      final sinceLastFixS =
-          DateTime.now().difference(lastFixAt).inMilliseconds / 1000.0;
       if (sinceLastFixS >= _kSpeedStaleSeconds) {
         final decayFraction =
             ((sinceLastFixS - _kSpeedStaleSeconds) / _kSpeedDecaySeconds)
                 .clamp(0.0, 1.0);
         currentSpeedKmh = speedAtLastFix * (1 - decayFraction);
       }
-      // Accrue moving time once per tick while above the stop threshold.
-      if (currentSpeedKmh > _kMovingSpeedThresholdKmh) {
+      // Accrue moving time once per tick while above the stop threshold — but
+      // not during a blackout (no data = not known to be moving).
+      if (signalLostAt == null && currentSpeedKmh > _kMovingSpeedThresholdKmh) {
         movingSeconds++;
       }
     }
@@ -481,6 +522,11 @@ Future<void> onStart(ServiceInstance service) async {
         } else if (phase == 'countdown') {
           title = 'RollingBike — starting…';
           content = 'Ride begins in $countdown';
+        } else if (signalLostAt != null) {
+          title = 'RollingBike — GPS signal lost';
+          content = 'Clock paused · '
+              '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
+              '${_formatDuration(elapsedSeconds())}';
         } else {
           title = paused ? 'RollingBike — paused' : 'RollingBike — recording';
           content = '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
@@ -520,15 +566,20 @@ Future<void> onStart(ServiceInstance service) async {
       }
 
       final now = DateTime.now();
+      // Seconds since the last accepted fix. A gap beyond _kSignalLossSeconds
+      // means GPS blacked out (tunnel/train) — the ticker froze the clock, and
+      // this fix's segment must not be bridged into distance (see the re-anchor
+      // below).
+      final gapSeconds = now.difference(lastFixAt).inMilliseconds / 1000.0;
+      final longGap = pointCount > 0 && gapSeconds >= _kSignalLossSeconds;
 
       // Raw displacement speed since the last accepted fix — used only by the
       // jump gate below (distance/speed themselves come from the filter).
       double? displacementSpeedKmh;
-      if (lastLat != null && lastLon != null) {
+      if (lastLat != null && lastLon != null && gapSeconds > 0) {
         final segMeters =
             haversineMeters(lastLat!, lastLon!, fix.latitude, fix.longitude);
-        final dtSeconds = now.difference(lastFixAt).inMilliseconds / 1000.0;
-        if (dtSeconds > 0) displacementSpeedKmh = (segMeters / dtSeconds) * 3.6;
+        displacementSpeedKmh = (segMeters / gapSeconds) * 3.6;
       }
 
       // Impossible-jump gate: a segment implying a wild speed is GPS drift, not
@@ -545,7 +596,14 @@ Future<void> onStart(ServiceInstance service) async {
         kalman.reset();
         smoothLat = null;
         smoothLon = null;
+        recentFixes.clear();
         rejectedStreak = 0;
+        // A blackout that ended with a far jump — bank the frozen time so it
+        // stays out of duration/avg.
+        if (signalLostAt != null) {
+          totalPaused += now.difference(signalLostAt!);
+          signalLostAt = null;
+        }
         return;
       }
       rejectedStreak = 0;
@@ -554,6 +612,22 @@ Future<void> onStart(ServiceInstance service) async {
       lastLat = fix.latitude;
       lastLon = fix.longitude;
       lastFixAt = now;
+
+      // Long-gap re-anchor: GPS was out (blackout) and a fix is back. Reseed the
+      // filter from here rather than interpolating across the dead zone, drop the
+      // stale standstill window, and bank the frozen blackout time. Nulling the
+      // smoothed anchor makes the distance step below skip this segment — a
+      // straight line across a tunnel is phantom, not ridden.
+      if (longGap) {
+        kalman.reset();
+        smoothLat = null;
+        smoothLon = null;
+        recentFixes.clear();
+        if (signalLostAt != null) {
+          totalPaused += now.difference(signalLostAt!);
+          signalLostAt = null;
+        }
+      }
 
       // Feed the Kalman filter. Fuse the Doppler velocity only when moving fast
       // enough for the reported heading to be meaningful.
@@ -583,6 +657,28 @@ Future<void> onStart(ServiceInstance service) async {
 
       // Speed comes straight from the filter's velocity estimate — no EMA.
       currentSpeedKmh = kalman.speedKmh;
+
+      // Windowed standstill snap: if net ground displacement over the recent
+      // window is negligible, the reported speed is GPS "creep", not real
+      // motion — force it to 0 so the gauge holds steady at stops (both
+      // pipelines creep; fused worst). Distance already can't grow while
+      // stationary (it accrues along the smoothed track), so this only corrects
+      // the displayed/peak speed and keeps moving-time from ticking at a stop.
+      recentFixes.add((now, sLat, sLon));
+      while (recentFixes.length > 1 &&
+          now.difference(recentFixes.first.$1).inMilliseconds / 1000.0 >
+              _kStationaryWindowSeconds) {
+        recentFixes.removeAt(0);
+      }
+      if (recentFixes.length >= 2) {
+        final oldest = recentFixes.first;
+        final spanS = now.difference(oldest.$1).inMilliseconds / 1000.0;
+        if (spanS >= _kStationaryWindowSeconds * 0.6) {
+          final netM = haversineMeters(oldest.$2, oldest.$3, sLat, sLon);
+          if ((netM / spanS) * 3.6 < _kStationarySpeedKmh) currentSpeedKmh = 0.0;
+        }
+      }
+
       speedAtLastFix = currentSpeedKmh;
       if (currentSpeedKmh > maxSpeedKmh) maxSpeedKmh = currentSpeedKmh;
 
@@ -628,9 +724,16 @@ Future<void> onStart(ServiceInstance service) async {
   // covered while paused is not counted when tracking resumes.
   service.on('pause').listen((_) {
     if (phase != 'recording' || paused) return;
+    // If a blackout was in progress, bank its frozen time before the manual
+    // pause takes over, so the two freezes can't double-count.
+    if (signalLostAt != null) {
+      totalPaused += DateTime.now().difference(signalLostAt!);
+      signalLostAt = null;
+    }
     paused = true;
     pauseStartedAt = DateTime.now();
     currentSpeedKmh = 0.0;
+    recentFixes.clear();
     positionSub?.cancel();
     positionSub = null;
     lastLat = null;
