@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../data/database_service.dart';
+import '../services/geocoding_service.dart';
 import '../services/permission_service.dart';
 import '../services/tracking_service.dart';
 
@@ -185,8 +186,28 @@ class TrackingController extends StateNotifier<TrackingUiState> {
     final t = state.lastFinished;
     if (t != null && name.trim().isNotEmpty) {
       await DatabaseService.instance.setRideName(t.rideId, name.trim());
+      _geocodeRide(t.rideId, state.route);
     }
     _resetToIdle();
+  }
+
+  /// Reverse-geocodes the ride's first/last fix and persists the place names —
+  /// fire-and-forget and off the save path, so returning to idle is instant and
+  /// stays offline-first. If the lookup succeeds, the names simply appear on the
+  /// next History refresh; if it fails (offline), nothing is written.
+  void _geocodeRide(int rideId, List<LatLng> route) {
+    if (route.isEmpty) return;
+    final start = route.first;
+    final end = route.last;
+    unawaited(() async {
+      final startPlace =
+          await GeocodingService.placeName(start.latitude, start.longitude);
+      final endPlace =
+          await GeocodingService.placeName(end.latitude, end.longitude);
+      if (startPlace == null && endPlace == null) return;
+      await DatabaseService.instance
+          .setRidePlaces(rideId, startPlace: startPlace, endPlace: endPlace);
+    }());
   }
 
   /// Deletes the just-finished ride (and its track points) and returns to idle.

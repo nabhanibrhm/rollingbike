@@ -45,4 +45,13 @@ class Ride {
   /// tag so diagnostics can compare the two pipelines. Null for rides recorded
   /// before the switch existed. Remove once a source is chosen.
   String? gpsSource;
+
+  /// Human-readable place name reverse-geocoded from the ride's first GPS fix
+  /// (e.g. "Bandung"). Null when geocoding hasn't run — old rides, or rides
+  /// saved while offline (best-effort, online-only lookup).
+  String? startPlace;
+
+  /// Human-readable place name reverse-geocoded from the ride's last GPS fix
+  /// (e.g. "Lembang"). Null under the same conditions as [startPlace].
+  String? endPlace;
 }

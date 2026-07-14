@@ -27,34 +27,44 @@ const RideSchema = CollectionSchema(
       name: r'durationSeconds',
       type: IsarType.long,
     ),
-    r'endTime': PropertySchema(
+    r'endPlace': PropertySchema(
       id: 2,
+      name: r'endPlace',
+      type: IsarType.string,
+    ),
+    r'endTime': PropertySchema(
+      id: 3,
       name: r'endTime',
       type: IsarType.dateTime,
     ),
     r'gpsSource': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'gpsSource',
       type: IsarType.string,
     ),
     r'maxSpeedKmh': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'maxSpeedKmh',
       type: IsarType.double,
     ),
     r'movingSeconds': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'movingSeconds',
       type: IsarType.long,
     ),
-    r'name': PropertySchema(id: 6, name: r'name', type: IsarType.string),
+    r'name': PropertySchema(id: 7, name: r'name', type: IsarType.string),
+    r'startPlace': PropertySchema(
+      id: 8,
+      name: r'startPlace',
+      type: IsarType.string,
+    ),
     r'startTime': PropertySchema(
-      id: 7,
+      id: 9,
       name: r'startTime',
       type: IsarType.dateTime,
     ),
     r'totalDistanceMeters': PropertySchema(
-      id: 8,
+      id: 10,
       name: r'totalDistanceMeters',
       type: IsarType.double,
     ),
@@ -96,6 +106,12 @@ int _rideEstimateSize(
 ) {
   var bytesCount = offsets.last;
   {
+    final value = object.endPlace;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.gpsSource;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
@@ -103,6 +119,12 @@ int _rideEstimateSize(
   }
   {
     final value = object.name;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.startPlace;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
@@ -118,13 +140,15 @@ void _rideSerialize(
 ) {
   writer.writeDouble(offsets[0], object.averageSpeedKmh);
   writer.writeLong(offsets[1], object.durationSeconds);
-  writer.writeDateTime(offsets[2], object.endTime);
-  writer.writeString(offsets[3], object.gpsSource);
-  writer.writeDouble(offsets[4], object.maxSpeedKmh);
-  writer.writeLong(offsets[5], object.movingSeconds);
-  writer.writeString(offsets[6], object.name);
-  writer.writeDateTime(offsets[7], object.startTime);
-  writer.writeDouble(offsets[8], object.totalDistanceMeters);
+  writer.writeString(offsets[2], object.endPlace);
+  writer.writeDateTime(offsets[3], object.endTime);
+  writer.writeString(offsets[4], object.gpsSource);
+  writer.writeDouble(offsets[5], object.maxSpeedKmh);
+  writer.writeLong(offsets[6], object.movingSeconds);
+  writer.writeString(offsets[7], object.name);
+  writer.writeString(offsets[8], object.startPlace);
+  writer.writeDateTime(offsets[9], object.startTime);
+  writer.writeDouble(offsets[10], object.totalDistanceMeters);
 }
 
 Ride _rideDeserialize(
@@ -136,14 +160,16 @@ Ride _rideDeserialize(
   final object = Ride();
   object.averageSpeedKmh = reader.readDouble(offsets[0]);
   object.durationSeconds = reader.readLong(offsets[1]);
-  object.endTime = reader.readDateTimeOrNull(offsets[2]);
-  object.gpsSource = reader.readStringOrNull(offsets[3]);
+  object.endPlace = reader.readStringOrNull(offsets[2]);
+  object.endTime = reader.readDateTimeOrNull(offsets[3]);
+  object.gpsSource = reader.readStringOrNull(offsets[4]);
   object.id = id;
-  object.maxSpeedKmh = reader.readDouble(offsets[4]);
-  object.movingSeconds = reader.readLong(offsets[5]);
-  object.name = reader.readStringOrNull(offsets[6]);
-  object.startTime = reader.readDateTime(offsets[7]);
-  object.totalDistanceMeters = reader.readDouble(offsets[8]);
+  object.maxSpeedKmh = reader.readDouble(offsets[5]);
+  object.movingSeconds = reader.readLong(offsets[6]);
+  object.name = reader.readStringOrNull(offsets[7]);
+  object.startPlace = reader.readStringOrNull(offsets[8]);
+  object.startTime = reader.readDateTime(offsets[9]);
+  object.totalDistanceMeters = reader.readDouble(offsets[10]);
   return object;
 }
 
@@ -159,18 +185,22 @@ P _rideDeserializeProp<P>(
     case 1:
       return (reader.readLong(offset)) as P;
     case 2:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 4:
-      return (reader.readDouble(offset)) as P;
-    case 5:
-      return (reader.readLong(offset)) as P;
-    case 6:
       return (reader.readStringOrNull(offset)) as P;
+    case 5:
+      return (reader.readDouble(offset)) as P;
+    case 6:
+      return (reader.readLong(offset)) as P;
     case 7:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 8:
+      return (reader.readStringOrNull(offset)) as P;
+    case 9:
+      return (reader.readDateTime(offset)) as P;
+    case 10:
       return (reader.readDouble(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -510,6 +540,168 @@ extension RideQueryFilter on QueryBuilder<Ride, Ride, QFilterCondition> {
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'endPlace'),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'endPlace'),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'endPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'endPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'endPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'endPlace',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'endPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'endPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'endPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'endPlace',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'endPlace', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> endPlaceIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'endPlace', value: ''),
       );
     });
   }
@@ -1103,6 +1295,168 @@ extension RideQueryFilter on QueryBuilder<Ride, Ride, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'startPlace'),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'startPlace'),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'startPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'startPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'startPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'startPlace',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'startPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'startPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceContains(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'startPlace',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceMatches(
+    String pattern, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'startPlace',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'startPlace', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterFilterCondition> startPlaceIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'startPlace', value: ''),
+      );
+    });
+  }
+
   QueryBuilder<Ride, Ride, QAfterFilterCondition> startTimeEqualTo(
     DateTime value,
   ) {
@@ -1267,6 +1621,18 @@ extension RideQuerySortBy on QueryBuilder<Ride, Ride, QSortBy> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QAfterSortBy> sortByEndPlace() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'endPlace', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterSortBy> sortByEndPlaceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'endPlace', Sort.desc);
+    });
+  }
+
   QueryBuilder<Ride, Ride, QAfterSortBy> sortByEndTime() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'endTime', Sort.asc);
@@ -1327,6 +1693,18 @@ extension RideQuerySortBy on QueryBuilder<Ride, Ride, QSortBy> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QAfterSortBy> sortByStartPlace() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'startPlace', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterSortBy> sortByStartPlaceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'startPlace', Sort.desc);
+    });
+  }
+
   QueryBuilder<Ride, Ride, QAfterSortBy> sortByStartTime() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'startTime', Sort.asc);
@@ -1374,6 +1752,18 @@ extension RideQuerySortThenBy on QueryBuilder<Ride, Ride, QSortThenBy> {
   QueryBuilder<Ride, Ride, QAfterSortBy> thenByDurationSecondsDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'durationSeconds', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterSortBy> thenByEndPlace() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'endPlace', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterSortBy> thenByEndPlaceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'endPlace', Sort.desc);
     });
   }
 
@@ -1449,6 +1839,18 @@ extension RideQuerySortThenBy on QueryBuilder<Ride, Ride, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QAfterSortBy> thenByStartPlace() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'startPlace', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QAfterSortBy> thenByStartPlaceDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'startPlace', Sort.desc);
+    });
+  }
+
   QueryBuilder<Ride, Ride, QAfterSortBy> thenByStartTime() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'startTime', Sort.asc);
@@ -1487,6 +1889,14 @@ extension RideQueryWhereDistinct on QueryBuilder<Ride, Ride, QDistinct> {
     });
   }
 
+  QueryBuilder<Ride, Ride, QDistinct> distinctByEndPlace({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'endPlace', caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Ride, Ride, QDistinct> distinctByEndTime() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'endTime');
@@ -1518,6 +1928,14 @@ extension RideQueryWhereDistinct on QueryBuilder<Ride, Ride, QDistinct> {
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'name', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<Ride, Ride, QDistinct> distinctByStartPlace({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'startPlace', caseSensitive: caseSensitive);
     });
   }
 
@@ -1553,6 +1971,12 @@ extension RideQueryProperty on QueryBuilder<Ride, Ride, QQueryProperty> {
     });
   }
 
+  QueryBuilder<Ride, String?, QQueryOperations> endPlaceProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'endPlace');
+    });
+  }
+
   QueryBuilder<Ride, DateTime?, QQueryOperations> endTimeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'endTime');
@@ -1580,6 +2004,12 @@ extension RideQueryProperty on QueryBuilder<Ride, Ride, QQueryProperty> {
   QueryBuilder<Ride, String?, QQueryOperations> nameProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'name');
+    });
+  }
+
+  QueryBuilder<Ride, String?, QQueryOperations> startPlaceProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'startPlace');
     });
   }
 

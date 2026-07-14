@@ -66,6 +66,19 @@ class DatabaseService {
     });
   }
 
+  /// Sets reverse-geocoded start/end place names on a ride (best-effort — either
+  /// may be null). No-op if the ride was deleted before geocoding finished.
+  Future<void> setRidePlaces(int rideId,
+      {String? startPlace, String? endPlace}) {
+    return isar.writeTxn(() async {
+      final ride = await isar.rides.get(rideId);
+      if (ride == null) return;
+      ride.startPlace = startPlace;
+      ride.endPlace = endPlace;
+      await isar.rides.put(ride);
+    });
+  }
+
   /// Deletes a ride and every track point that belongs to it.
   Future<void> deleteRide(int rideId) {
     return isar.writeTxn(() async {
