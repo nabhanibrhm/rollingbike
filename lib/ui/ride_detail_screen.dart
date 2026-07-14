@@ -13,6 +13,7 @@ import '../providers/history_providers.dart';
 import '../providers/settings_providers.dart';
 import '../services/ride_share.dart';
 import '../theme/app_theme.dart';
+import 'place_route_label.dart';
 import 'speed_distance_chart.dart';
 import 'tracking_map_screen.dart' show basemapUrl;
 
@@ -528,6 +529,15 @@ class _SummaryPanel extends StatelessWidget {
               _formatDate(ride.startTime),
               style: TextStyle(color: cx.textDim, fontSize: 13),
             ),
+            if (PlaceRouteLabel.label(ride.startPlace, ride.endPlace) !=
+                null) ...[
+              const SizedBox(height: 6),
+              PlaceRouteLabel(
+                startPlace: ride.startPlace,
+                endPlace: ride.endPlace,
+                fontSize: 14,
+              ),
+            ],
             const SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,

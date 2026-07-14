@@ -7,6 +7,7 @@ import '../data/models/ride.dart';
 import '../providers/history_providers.dart';
 import '../providers/settings_providers.dart';
 import '../theme/app_theme.dart';
+import 'place_route_label.dart';
 import 'ride_detail_screen.dart';
 
 /// Scrollable list of saved rides, newest first. Each row is a compact ride
@@ -170,6 +171,15 @@ class _RideCard extends StatelessWidget {
                             _formatDate(ride.startTime),
                             style: TextStyle(color: cx.textDim, fontSize: 13),
                           ),
+                          if (PlaceRouteLabel.label(
+                                  ride.startPlace, ride.endPlace) !=
+                              null) ...[
+                            const SizedBox(height: 4),
+                            PlaceRouteLabel(
+                              startPlace: ride.startPlace,
+                              endPlace: ride.endPlace,
+                            ),
+                          ],
                         ],
                       ),
                     ),
