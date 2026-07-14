@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -13,8 +14,11 @@ import '../providers/history_providers.dart';
 import '../providers/settings_providers.dart';
 import '../services/ride_share.dart';
 import '../theme/app_theme.dart';
+import 'accel_brake_chart.dart';
+import 'elevation_speed_chart.dart';
 import 'place_route_label.dart';
 import 'speed_distance_chart.dart';
+import 'speed_zone_chart.dart';
 import 'tracking_map_screen.dart' show basemapUrl;
 
 /// The two ways a rendered ride card can be sent off.
@@ -250,10 +254,10 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
                     ride: widget.ride,
                     unit: ref.watch(speedUnitProvider),
                   ),
-                  // Speed-vs-distance chart from the recorded track (needs at
-                  // least two points to plot a line).
+                  // Charts from the recorded track (needs at least two points),
+                  // shown as a horizontal swipe carousel.
                   if ((trackAsync.valueOrNull?.length ?? 0) >= 2)
-                    _RideChart(
+                    _ChartCarousel(
                       points: trackAsync.value!,
                       avgSpeedKmh: widget.ride.averageSpeedKmh,
                       unit: ref.watch(speedUnitProvider),
@@ -596,6 +600,167 @@ class _SummaryPanel extends StatelessWidget {
           ],
         ),
     );
+  }
+}
+
+/// Horizontal swipe carousel over the ride's charts: speed-vs-distance, speed
+/// zones, acceleration/braking, and (when the track carries altitude) the
+/// elevation-vs-speed profile. The pager resizes to the current page's actual
+/// content height (each page is measured off its natural size) so the dots hug
+/// the chart instead of floating below a fixed gap. The [PageView] only claims
+/// horizontal drags and inner pages never scroll, so vertical scrolling passes
+/// through to the surrounding scroll view. Page-indicator dots sit below.
+class _ChartCarousel extends StatefulWidget {
+  const _ChartCarousel({
+    required this.points,
+    required this.avgSpeedKmh,
+    required this.unit,
+  });
+
+  final List<TrackPoint> points;
+  final double avgSpeedKmh;
+  final SpeedUnit unit;
+
+  /// Height used until a page has been measured (first frame / far pages).
+  static const double _fallbackHeight = 420;
+
+  @override
+  State<_ChartCarousel> createState() => _ChartCarouselState();
+}
+
+class _ChartCarouselState extends State<_ChartCarousel> {
+  final _controller = PageController();
+  int _page = 0;
+
+  /// Measured natural content height per page index.
+  final _heights = <int, double>{};
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _setHeight(int index, double height) {
+    if (_heights[index] == height) return;
+    setState(() => _heights[index] = height);
+  }
+
+  /// Mirrors [ElevationSpeedChart]'s own guard so the elevation page is only
+  /// added when it would actually render (>= 2 altitude fixes, >= 2 m of swing).
+  bool get _hasElevation {
+    var count = 0;
+    double? mn, mx;
+    for (final p in widget.points) {
+      final a = p.altitude;
+      if (a == null) continue;
+      count++;
+      mn = mn == null ? a : (a < mn ? a : mn);
+      mx = mx == null ? a : (a > mx ? a : mx);
+    }
+    return count >= 2 && mn != null && mx != null && (mx - mn) >= 2.0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
+    final pages = <Widget>[
+      _RideChart(
+        points: widget.points,
+        avgSpeedKmh: widget.avgSpeedKmh,
+        unit: widget.unit,
+      ),
+      SpeedZoneChart(points: widget.points, unit: widget.unit),
+      AccelBrakeChart(points: widget.points),
+      if (_hasElevation)
+        ElevationSpeedChart(points: widget.points, unit: widget.unit),
+    ];
+
+    // Guard against the current page falling out of range (e.g. elevation page
+    // disappearing) after a rebuild.
+    final page = _page.clamp(0, pages.length - 1);
+    final height = _heights[page] ?? _ChartCarousel._fallbackHeight;
+
+    return Column(
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          height: height,
+          child: PageView(
+            controller: _controller,
+            onPageChanged: (i) => setState(() => _page = i),
+            children: [
+              for (var i = 0; i < pages.length; i++)
+                // Never-scrolling viewport: lets the child take its natural
+                // height (for measurement) without stealing vertical drags.
+                SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: _MeasureSize(
+                    onChange: (size) => _setHeight(i, size.height),
+                    child: pages[i],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 18),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < pages.length; i++)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: i == page ? 22 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: i == page ? cx.accent : cx.border,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Reports its child's laid-out size via [onChange] after each frame it changes.
+/// Used to size the chart pager to the active page's real content height.
+class _MeasureSize extends SingleChildRenderObjectWidget {
+  const _MeasureSize({required this.onChange, required super.child});
+
+  final ValueChanged<Size> onChange;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _MeasureSizeRenderObject(onChange);
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _MeasureSizeRenderObject renderObject) {
+    renderObject.onChange = onChange;
+  }
+}
+
+class _MeasureSizeRenderObject extends RenderProxyBox {
+  _MeasureSizeRenderObject(this.onChange);
+
+  ValueChanged<Size> onChange;
+  Size? _old;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final size = child?.size ?? Size.zero;
+    if (size != _old) {
+      _old = size;
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => onChange(size));
+    }
   }
 }
 
