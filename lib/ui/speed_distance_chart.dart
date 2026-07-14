@@ -163,7 +163,7 @@ class SpeedDistanceChart extends StatelessWidget {
                         curveSmoothness: 0.2,
                         preventCurveOverShooting: true,
                         color: cx.accent,
-                        barWidth: 2,
+                        barWidth: 1,
                         isStrokeCapRound: true,
                         dotData: const FlDotData(show: false),
                         belowBarData: BarAreaData(show: false),

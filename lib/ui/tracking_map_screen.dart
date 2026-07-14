@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -446,10 +447,27 @@ class _ChartBackdrop extends StatelessWidget {
     return Container(
       color: cx.canvas,
       child: SafeArea(
-        child: SpeedDistanceChart(
-          spots: spots,
-          avgSpeedKmh: state.telemetry?.avgSpeedKmh ?? 0,
-          unit: unit,
+        child: LayoutBuilder(
+          builder: (context, c) {
+            // Keep the live chart compact and anchored near the top so both the
+            // SPEED (y) and DISTANCE (x) axes stay fully visible above the
+            // telemetry sheet — a full-bleed chart hides the x-axis behind it.
+            final h = math.min(300.0, c.maxHeight * 0.5);
+            return Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  height: h,
+                  child: SpeedDistanceChart(
+                    spots: spots,
+                    avgSpeedKmh: state.telemetry?.avgSpeedKmh ?? 0,
+                    unit: unit,
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
