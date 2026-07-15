@@ -17,6 +17,7 @@ import '../theme/app_theme.dart';
 import 'accel_brake_chart.dart';
 import 'elevation_speed_chart.dart';
 import 'place_route_label.dart';
+import 'share_card.dart';
 import 'speed_distance_chart.dart';
 import 'speed_zone_chart.dart';
 import 'tracking_map_screen.dart' show basemapUrl;
@@ -92,9 +93,15 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
     if (_sharing) return;
     final points = ref.read(rideTrackProvider(widget.ride.id)).valueOrNull;
     if (points == null) return; // track still loading — button is disabled
+    final unit = ref.read(speedUnitProvider);
+
+    // Step 1 — pick one of the four card layouts (live previews).
+    final layout = await _pickLayout(points, unit);
+    if (layout == null || !mounted) return;
+
+    // Step 2 — pick the export action for the chosen layout.
     final action = await _showShareOptions();
     if (action == null || !mounted) return;
-    final unit = ref.read(speedUnitProvider);
 
     setState(() => _sharing = true);
     try {
@@ -104,6 +111,7 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
           ride: widget.ride,
           points: points,
           unit: unit,
+          layout: layout,
         );
       } else {
         await RideShare.saveToGallery(
@@ -111,6 +119,7 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
           ride: widget.ride,
           points: points,
           unit: unit,
+          layout: layout,
         );
         if (mounted) _showMessage('Saved to your gallery.');
       }
@@ -125,6 +134,60 @@ class _RideDetailScreenState extends ConsumerState<RideDetailScreen> {
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
+  }
+
+  /// Bottom sheet of the four card layouts, each rendered as a live preview on
+  /// a dark backdrop (the cards are transparent + styled for a dark look).
+  /// Returns the picked [ShareLayout], or null if dismissed.
+  Future<ShareLayout?> _pickLayout(List<TrackPoint> points, SpeedUnit unit) {
+    final cx = AppColors.of(context);
+    return showModalBottomSheet<ShareLayout>(
+      context: context,
+      backgroundColor: cx.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Choose a layout',
+                  style: TextStyle(
+                      color: cx.textBright,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text('Pick a card style, then share or save it.',
+                  style: TextStyle(color: cx.textDim, fontSize: 13)),
+              const SizedBox(height: 16),
+              Flexible(
+                child: GridView.count(
+                  shrinkWrap: true,
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 16,
+                  childAspectRatio: 0.52,
+                  children: [
+                    for (final layout in ShareLayout.values)
+                      _LayoutTile(
+                        ride: widget.ride,
+                        points: points,
+                        unit: unit,
+                        layout: layout,
+                        onTap: () => Navigator.of(ctx).pop(layout),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<_ShareAction?> _showShareOptions() {
@@ -859,6 +922,73 @@ class _Stat extends StatelessWidget {
               ],
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One tappable card-layout preview in the "Choose a layout" sheet: the real
+/// [ShareCard] scaled to fit, on a fixed dark backdrop (the card is transparent
+/// and styled for a dark look), with the layout's name + blurb beneath.
+class _LayoutTile extends StatelessWidget {
+  const _LayoutTile({
+    required this.ride,
+    required this.points,
+    required this.unit,
+    required this.layout,
+    required this.onTap,
+  });
+
+  final Ride ride;
+  final List<TrackPoint> points;
+  final SpeedUnit unit;
+  final ShareLayout layout;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cx = AppColors.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0A),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cx.border),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: 360,
+                  height: 640,
+                  child: ShareCard(
+                    ride: ride,
+                    points: points,
+                    unit: unit,
+                    layout: layout,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(layout.title,
+              style: TextStyle(
+                  color: cx.textBright,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+          Text(layout.blurb,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: cx.textDim, fontSize: 11)),
         ],
       ),
     );

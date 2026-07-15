@@ -72,6 +72,7 @@ flutter:
 
   assets:
     - assets/icon/logo_transparent.png
+    - assets/icon/logo_foreground.png
 
   # Inter (the app's UI face, matching the design prototype) bundled locally
   # for offline-first typography (see app_theme).
