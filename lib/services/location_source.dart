@@ -2,37 +2,33 @@ import 'package:geolocator/geolocator.dart';
 
 /// Which GPS pipeline a ride is recorded with. This is a temporary A/B testing
 /// switch — the loser will be deleted once we've decided which behaves better
-/// for real motorcycle riding.
+/// for real motorcycle riding. (The original 5 m-filtered `fused` provider has
+/// already been dropped; the comparison is now raw vs fusedFast.)
 ///
-/// - [fused]: geolocator's default (Google Play Services *fused* provider),
-///   with a 5 m distance filter — the app's original behaviour.
 /// - [raw]: geolocator forced onto the Android *LocationManager* (`GPS_PROVIDER`,
 ///   pure GNSS, no Play Services fusion), polling ~1 Hz with no distance filter
 ///   so we see every fix the chip produces.
 /// - [fusedFast]: the *fused* provider (Play Services sensor fusion, poor-signal
-///   help) but at raw's fast cadence — 1 s interval, no distance filter. Tests
-///   whether fused's coarseness was the 5 m filter rather than the provider.
+///   help) but at raw's fast cadence — 1 s interval, no distance filter.
 enum LocationSourceKind {
-  fused,
   raw,
   fusedFast;
 
   /// Short stable tag persisted on the ride and shown in diagnostics.
   String get tag => switch (this) {
-        LocationSourceKind.fused => 'fused',
         LocationSourceKind.raw => 'raw',
         LocationSourceKind.fusedFast => 'fused_fast',
       };
 
   /// Human label for the picker / summary.
   String get label => switch (this) {
-        LocationSourceKind.fused => 'Fused',
         LocationSourceKind.raw => 'Raw GPS (default)',
         LocationSourceKind.fusedFast => 'Fused fast',
       };
 
+  /// Maps a persisted tag back to a kind. Unknown tags — including the retired
+  /// `'fused'` — fall back to [raw] (the default/committed pipeline).
   static LocationSourceKind fromTag(String? tag) => switch (tag) {
-        'fused' => LocationSourceKind.fused,
         'fused_fast' => LocationSourceKind.fusedFast,
         _ => LocationSourceKind.raw,
       };
@@ -87,16 +83,9 @@ abstract class LocationSource {
   Stream<GpsFix> positions();
 
   static LocationSource forKind(LocationSourceKind kind) => switch (kind) {
-        LocationSourceKind.fused => _GeolocatorSource(_fusedSettings),
         LocationSourceKind.raw => _GeolocatorSource(_rawSettings),
         LocationSourceKind.fusedFast => _GeolocatorSource(_fusedFastSettings),
       };
-
-  /// Original behaviour: fused provider, 5 m distance filter to suppress jitter.
-  static final LocationSettings _fusedSettings = LocationSettings(
-    accuracy: LocationAccuracy.best,
-    distanceFilter: 5,
-  );
 
   /// Raw GNSS: force the LocationManager (`GPS_PROVIDER`), poll ~1 Hz, and take
   /// every fix (no distance filter) so we can measure the chip's true cadence.
@@ -109,7 +98,7 @@ abstract class LocationSource {
 
   /// Fused provider (Play Services fusion) at raw's fast cadence: 1 s interval,
   /// no distance filter. `forceLocationManager: false` keeps the fused provider;
-  /// this isolates "provider" from "cadence" vs the original [_fusedSettings].
+  /// pairs the fused provider with raw's fast, unfiltered cadence.
   static final LocationSettings _fusedFastSettings = AndroidSettings(
     accuracy: LocationAccuracy.best,
     forceLocationManager: false,

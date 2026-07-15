@@ -48,7 +48,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<LocationSourceKind?> _showGpsSourcePicker(LocationSourceKind current) {
     final cx = AppColors.of(context);
     const descriptions = {
-      LocationSourceKind.fused: 'Google fused provider · 5 m filter',
       LocationSourceKind.raw: 'Raw GNSS · 1 s cadence · every fix',
       LocationSourceKind.fusedFast: 'Fused provider · 1 s cadence · every fix',
     };
