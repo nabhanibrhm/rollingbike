@@ -29,8 +29,14 @@ class ElevationSpeedChart extends StatelessWidget {
   /// Minimum elevation swing (m) for the chart to be worth showing.
   static const double _minElevRange = 2.0;
 
-  /// Per-step altitude change below this (m) is GPS noise, not real gain/loss.
-  static const double _gainNoiseFloor = 1.0;
+  /// Window (samples) of the centred moving average used to tame raw GNSS
+  /// vertical jitter before plotting and summing gain/loss.
+  static const int _smoothWindow = 5;
+
+  /// Elevation must move at least this far (m) from the running reference before
+  /// it counts as real gain/loss — hysteresis that rejects jitter while still
+  /// capturing gradual climbs (which a per-step floor would silently drop).
+  static const double _gainThreshold = 3.0;
 
   static const int _maxPoints = 300;
 
@@ -39,36 +45,45 @@ class ElevationSpeedChart extends StatelessWidget {
     final cx = AppColors.of(context);
     final start = points.first.timestamp;
 
-    // Elevation series (only points that carry altitude).
-    final elev = <FlSpot>[]; // (tSec, metres) — real metres for now
-    double? eMin, eMax;
-    var gain = 0.0, loss = 0.0;
-    double? prevAlt;
+    // Raw altitude series (only points that carry altitude), paired with time.
+    final times = <double>[];
+    final rawAlt = <double>[];
     for (final p in points) {
       final alt = p.altitude;
       if (alt == null) continue;
-      final tSec = p.timestamp.difference(start).inMilliseconds / 1000.0;
-      elev.add(FlSpot(tSec, alt));
-      eMin = eMin == null ? alt : (alt < eMin ? alt : eMin);
-      eMax = eMax == null ? alt : (alt > eMax ? alt : eMax);
-      if (prevAlt != null) {
-        final d = alt - prevAlt;
-        if (d.abs() >= _gainNoiseFloor) {
-          if (d > 0) {
-            gain += d;
-          } else {
-            loss += -d;
-          }
-        }
-      }
-      prevAlt = alt;
+      times.add(p.timestamp.difference(start).inMilliseconds / 1000.0);
+      rawAlt.add(alt);
+    }
+    if (rawAlt.length < 2) return const SizedBox.shrink();
+
+    // Smooth away raw GNSS vertical jitter before it reaches the plot or the
+    // gain/loss sums.
+    final alt = _movingAverage(rawAlt, _smoothWindow);
+
+    final elev = <FlSpot>[]; // (tSec, metres) — real metres for now
+    var eMin = alt.first, eMax = alt.first;
+    for (var i = 0; i < alt.length; i++) {
+      elev.add(FlSpot(times[i], alt[i]));
+      if (alt[i] < eMin) eMin = alt[i];
+      if (alt[i] > eMax) eMax = alt[i];
     }
 
-    if (elev.length < 2 ||
-        eMin == null ||
-        eMax == null ||
-        (eMax - eMin) < _minElevRange) {
-      return const SizedBox.shrink();
+    if ((eMax - eMin) < _minElevRange) return const SizedBox.shrink();
+
+    // Gain/loss by hysteresis: only commit a move once it has drifted at least
+    // _gainThreshold from the running reference, then re-anchor. Captures slow
+    // climbs (which accumulate against the reference) while ignoring jitter.
+    var gain = 0.0, loss = 0.0;
+    var ref = alt.first;
+    for (final a in alt) {
+      final d = a - ref;
+      if (d >= _gainThreshold) {
+        gain += d;
+        ref = a;
+      } else if (d <= -_gainThreshold) {
+        loss += -d;
+        ref = a;
+      }
     }
 
     // Speed series (all points), in the display unit.
@@ -84,7 +99,7 @@ class ElevationSpeedChart extends StatelessWidget {
     final maxY = maxSpeed <= 0 ? 1.0 : maxSpeed;
     final eRange = eMax - eMin;
     // Map real metres onto the shared speed axis.
-    double ePlot(double metres) => (metres - eMin!) / eRange * maxY;
+    double ePlot(double metres) => (metres - eMin) / eRange * maxY;
     final elevScaled = [
       for (final s in elev) FlSpot(s.x, ePlot(s.y)),
     ];
@@ -168,7 +183,7 @@ class ElevationSpeedChart extends StatelessWidget {
                       reservedSize: 40,
                       interval: maxY / 2,
                       getTitlesWidget: (v, meta) {
-                        final metres = eMin! + (v / maxY) * eRange;
+                        final metres = eMin + (v / maxY) * eRange;
                         return Text(
                           metres.toStringAsFixed(0),
                           style: _tick(cx, _elevColor),
@@ -240,6 +255,24 @@ class ElevationSpeedChart extends StatelessWidget {
 
   TextStyle _tick(AppPalette cx, Color color) =>
       TextStyle(color: color.withValues(alpha: 0.9), fontSize: 10);
+
+  /// Centred moving average over [window] samples, clamped at the ends. Returns
+  /// the input unchanged when there's too little to smooth.
+  static List<double> _movingAverage(List<double> xs, int window) {
+    if (window <= 1 || xs.length <= 2) return xs;
+    final half = window ~/ 2;
+    final out = List<double>.filled(xs.length, 0);
+    for (var i = 0; i < xs.length; i++) {
+      final lo = i - half < 0 ? 0 : i - half;
+      final hi = i + half >= xs.length ? xs.length - 1 : i + half;
+      var sum = 0.0;
+      for (var j = lo; j <= hi; j++) {
+        sum += xs[j];
+      }
+      out[i] = sum / (hi - lo + 1);
+    }
+    return out;
+  }
 
   /// Uniformly thins [spots] to at most [_maxPoints], always keeping the last.
   static List<FlSpot> _downsample(List<FlSpot> spots) {
