@@ -5,17 +5,19 @@ import 'package:flutter/material.dart';
 
 import '../core/units.dart';
 import '../theme/app_theme.dart';
+import 'chart_math.dart';
 
-/// Minimal speed-vs-distance line chart matching the design mockup: a black
-/// canvas with only an L-shaped pair of amber axes and a single thin, smooth
-/// amber line. The only reference values ("legend") are three per axis —
-/// SPEED shows `0 / avg / max`, DISTANCE shows `0 / half / total` — placed at
-/// their exact positions rather than on an evenly-spaced grid.
+/// Speed-vs-distance line chart in the "Hyper" template style: a smooth amber
+/// line over a faint **dashed grid** (both axes), round-interval numeric labels,
+/// no surrounding frame, and haloed dot markers only at the points worth
+/// calling out — the **start**, the **end**, and the **fastest** sample. A
+/// continuous ride would turn a dot-per-sample into an unreadable blob, so the
+/// Hyper marker treatment is reserved for those three.
 ///
-/// [spots] are `FlSpot(distanceKm, speedKmh)` (metric — the shape is unaffected
-/// by the display unit; only the tick labels are converted). [avgSpeedKmh] is
-/// the ride's average (distance/time), which can't be derived from the samples
-/// alone. Long series are downsampled to [maxPoints] for smooth live redraws.
+/// [spots] arrive as `FlSpot(distanceKm, speedKmh)` (metric). They're
+/// downsampled, then converted to the display [unit] up front so the axis ticks
+/// land on round display numbers in either km or mi. Long series are thinned to
+/// [maxPoints] for smooth live redraws.
 class SpeedDistanceChart extends StatelessWidget {
   const SpeedDistanceChart({
     super.key,
@@ -27,7 +29,12 @@ class SpeedDistanceChart extends StatelessWidget {
   });
 
   final List<FlSpot> spots;
+
+  /// Ride average (distance/time). Retained for API compatibility with the
+  /// call sites; the Hyper layout uses round-interval ticks rather than an
+  /// avg reference mark, so it's not currently drawn.
   final double avgSpeedKmh;
+
   final SpeedUnit unit;
   final int maxPoints;
 
@@ -36,189 +43,224 @@ class SpeedDistanceChart extends StatelessWidget {
   /// live ride chart (no one pokes it mid-ride); on for the saved-ride detail.
   final bool interactive;
 
-  // Gutters around the plot: room for the axis-name + tick labels.
-  static const double _gutterLeft = 46;
-  static const double _gutterBottom = 26;
-  static const double _gutterTop = 30;
-  static const double _gutterRight = 84;
-
   @override
   Widget build(BuildContext context) {
     final cx = AppColors.of(context);
-    final data = _downsample(spots, maxPoints);
-    final maxSpeed = data.fold(0.0, (m, s) => math.max(m, s.y));
-    final totalDist = data.isNotEmpty ? data.last.x : 0.0;
-    final maxY = maxSpeed <= 0 ? 1.0 : maxSpeed;
-    final maxX = totalDist <= 0 ? 1.0 : totalDist;
 
-    final tickStyle = TextStyle(color: cx.textDim, fontSize: 11);
-    final nameStyle = TextStyle(
-      color: cx.textBright,
-      fontSize: 13,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1,
+    // Downsample in metric, then convert to the display unit so every axis
+    // tick, gridline and label works in one consistent (display) space.
+    final raw = downsampleSpots(spots, maxPoints);
+    final data = <FlSpot>[
+      for (final s in raw) FlSpot(unit.distanceKm(s.x), unit.speed(s.y)),
+    ];
+    if (data.isEmpty) return const SizedBox.shrink();
+
+    final maxSpeed = data.fold(0.0, (m, s) => math.max(m, s.y));
+    final totalDist = data.last.x;
+
+    // The three points that get a haloed marker.
+    final first = data.first;
+    final last = data.last;
+    var maxSpot = data.first;
+    for (final s in data) {
+      if (s.y > maxSpot.y) maxSpot = s;
+    }
+    bool isKey(FlSpot s) =>
+        (s.x == first.x && s.y == first.y) ||
+        (s.x == last.x && s.y == last.y) ||
+        (s.x == maxSpot.x && s.y == maxSpot.y);
+
+    final yInterval = niceInterval(maxSpeed, 5);
+    final xInterval = niceInterval(totalDist, 4);
+    // Round the top up to the next gridline so the peak isn't glued to the edge.
+    final maxY =
+        maxSpeed <= 0 ? yInterval : ((maxSpeed / yInterval).floor() + 1) * yInterval;
+    final maxX = totalDist <= 0 ? xInterval : totalDist;
+
+    final gridLine = FlLine(
+      color: cx.border.withValues(alpha: 0.55),
+      strokeWidth: 1,
+      dashArray: const [4, 4],
     );
+    final tickStyle = TextStyle(color: cx.textDim, fontSize: 11);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
-      child: LayoutBuilder(
-        builder: (context, c) {
-          final chartLeft = _gutterLeft;
-          final chartTop = _gutterTop;
-          final chartW = math.max(1.0, c.maxWidth - _gutterLeft - _gutterRight);
-          final chartH =
-              math.max(1.0, c.maxHeight - _gutterTop - _gutterBottom);
-          final chartBottom = chartTop + chartH;
-          double yPix(double v) => chartTop + chartH * (1 - v / maxY);
-          double xPix(double v) => chartLeft + chartW * (v / maxX);
-
-          // SPEED: 0 / avg / max (avg only if it's a sane in-range value).
-          final yTicks = <double>{0, maxSpeed};
-          if (avgSpeedKmh > 0 && avgSpeedKmh < maxSpeed) yTicks.add(avgSpeedKmh);
-          // DISTANCE: 0 / half / total.
-          final xTicks = <double>[0, totalDist / 2, totalDist];
-
-          return Stack(
-            children: [
-              Positioned(
-                left: chartLeft,
-                top: chartTop,
-                width: chartW,
-                height: chartH,
-                child: LineChart(
-                  LineChartData(
-                    minX: 0,
-                    maxX: maxX,
-                    minY: 0,
-                    maxY: maxY,
-                    gridData: const FlGridData(show: false),
-                    titlesData: const FlTitlesData(show: false),
-                    borderData: FlBorderData(
+      padding: const EdgeInsets.fromLTRB(8, 12, 16, 4),
+      child: Column(
+        children: [
+          Expanded(
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: maxX,
+                minY: 0,
+                maxY: maxY,
+                gridData: FlGridData(
+                  show: true,
+                  drawHorizontalLine: true,
+                  drawVerticalLine: true,
+                  horizontalInterval: yInterval,
+                  verticalInterval: xInterval,
+                  getDrawingHorizontalLine: (_) => gridLine,
+                  getDrawingVerticalLine: (_) => gridLine,
+                ),
+                borderData: FlBorderData(show: false),
+                titlesData: FlTitlesData(
+                  show: true,
+                  topTitles:
+                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles:
+                      const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 34,
+                      interval: yInterval,
+                      getTitlesWidget: (v, meta) =>
+                          Text(fmtTick(v, yInterval), style: tickStyle),
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 26,
+                      interval: xInterval,
+                      // Skip the ragged label at the exact right edge (maxX =
+                      // total distance); keep only the round-number ticks.
+                      maxIncluded: false,
+                      getTitlesWidget: (v, meta) =>
+                          Text(fmtTick(v, xInterval), style: tickStyle),
+                    ),
+                  ),
+                ),
+                lineTouchData: interactive
+                    ? LineTouchData(
+                        enabled: true,
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipColor: (_) => cx.surface,
+                          tooltipRoundedRadius: 8,
+                          tooltipBorder: BorderSide(color: cx.accentInk, width: 1),
+                          tooltipPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          fitInsideHorizontally: true,
+                          fitInsideVertically: true,
+                          getTooltipItems: (touched) => [
+                            for (final s in touched)
+                              LineTooltipItem(
+                                '${s.x.toStringAsFixed(2)} ${unit.distanceLabel}\n',
+                                TextStyle(
+                                  color: cx.textDim,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                children: [
+                                  TextSpan(
+                                    text: '${s.y.toStringAsFixed(0)} '
+                                        '${unit.speedLabel}',
+                                    style: TextStyle(
+                                      color: cx.textBright,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                        getTouchedSpotIndicator: (bar, indices) => [
+                          for (final _ in indices)
+                            TouchedSpotIndicatorData(
+                              FlLine(color: cx.accentInk, strokeWidth: 1.5),
+                              FlDotData(
+                                show: true,
+                                getDotPainter: (spot, a, b, c) =>
+                                    FlDotCirclePainter(
+                                  radius: 4,
+                                  color: cx.accent,
+                                  strokeWidth: 2,
+                                  strokeColor: cx.canvas,
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    : const LineTouchData(enabled: false),
+                clipData: const FlClipData.all(),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: data,
+                    isCurved: true,
+                    curveSmoothness: 0.2,
+                    preventCurveOverShooting: true,
+                    color: cx.accent,
+                    barWidth: 2,
+                    isStrokeCapRound: true,
+                    dotData: FlDotData(
                       show: true,
-                      border: Border(
-                        left: BorderSide(color: cx.accentInk, width: 3),
-                        bottom: BorderSide(color: cx.accentInk, width: 3),
+                      checkToShowDot: (spot, _) => isKey(spot),
+                      getDotPainter: (spot, pct, bar, i) => FlDotCirclePainter(
+                        radius: 3.5,
+                        color: cx.accent,
+                        strokeWidth: 4,
+                        strokeColor: cx.accent.withValues(alpha: 0.28),
                       ),
                     ),
-                    lineTouchData: interactive
-                        ? LineTouchData(
-                            enabled: true,
-                            touchTooltipData: LineTouchTooltipData(
-                              getTooltipColor: (_) => cx.surface,
-                              tooltipRoundedRadius: 8,
-                              tooltipBorder:
-                                  BorderSide(color: cx.accentInk, width: 1),
-                              tooltipPadding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
-                              fitInsideHorizontally: true,
-                              fitInsideVertically: true,
-                              getTooltipItems: (touched) => [
-                                for (final s in touched)
-                                  LineTooltipItem(
-                                    '${unit.distanceKm(s.x).toStringAsFixed(2)} '
-                                    '${unit.distanceLabel}\n',
-                                    TextStyle(
-                                      color: cx.textDim,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    children: [
-                                      TextSpan(
-                                        text:
-                                            '${unit.speed(s.y).toStringAsFixed(0)} '
-                                            '${unit.speedLabel}',
-                                        style: TextStyle(
-                                          color: cx.textBright,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                            getTouchedSpotIndicator: (bar, indices) => [
-                              for (final _ in indices)
-                                TouchedSpotIndicatorData(
-                                  FlLine(color: cx.accentInk, strokeWidth: 1.5),
-                                  FlDotData(
-                                    show: true,
-                                    getDotPainter: (spot, a, b, c) =>
-                                        FlDotCirclePainter(
-                                      radius: 4,
-                                      color: cx.accent,
-                                      strokeWidth: 2,
-                                      strokeColor: cx.canvas,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          )
-                        : const LineTouchData(enabled: false),
-                    clipData: const FlClipData.all(),
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: data,
-                        isCurved: true,
-                        curveSmoothness: 0.2,
-                        preventCurveOverShooting: true,
-                        color: cx.accent,
-                        barWidth: 1,
-                        isStrokeCapRound: true,
-                        dotData: const FlDotData(show: false),
-                        belowBarData: BarAreaData(show: false),
-                      ),
-                    ],
+                    belowBarData: BarAreaData(show: false),
                   ),
-                ),
+                ],
               ),
-              // SPEED tick labels — right-aligned in the left gutter.
-              for (final v in yTicks)
-                Positioned(
-                  left: 0,
-                  width: _gutterLeft - 8,
-                  top: yPix(v) - 8,
-                  child: Text(
-                    unit.speed(v).toStringAsFixed(0),
-                    textAlign: TextAlign.right,
-                    style: tickStyle,
-                  ),
-                ),
-              // DISTANCE tick labels — centered under the x-axis.
-              for (final v in xTicks)
-                Positioned(
-                  left: xPix(v) - 26,
-                  width: 52,
-                  top: chartBottom + 5,
-                  child: Text(
-                    unit.distanceKm(v).toStringAsFixed(1),
-                    textAlign: TextAlign.center,
-                    style: tickStyle,
-                  ),
-                ),
-              Positioned(left: 0, top: 0, child: Text('SPEED', style: nameStyle)),
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Text('DISTANCE', style: nameStyle),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+          const SizedBox(height: 8),
+          _legend(cx),
+        ],
       ),
     );
   }
 
-  /// Uniformly thins [spots] to at most [max] points, always keeping the first
-  /// and last, so a long ride stays cheap to redraw without changing its shape.
-  static List<FlSpot> _downsample(List<FlSpot> spots, int max) {
-    if (spots.length <= max) return spots;
-    final stride = spots.length / max;
-    final out = <FlSpot>[];
-    for (var i = 0; i < max; i++) {
-      out.add(spots[(i * stride).floor()]);
-    }
-    out.add(spots.last);
-    return out;
+  Widget _legend(AppPalette cx) {
+    Widget dot() => Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: cx.accent.withValues(alpha: 0.28),
+          ),
+          child: Center(
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration:
+                  BoxDecoration(shape: BoxShape.circle, color: cx.accent),
+            ),
+          ),
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        dot(),
+        const SizedBox(width: 7),
+        Text(
+          'SPEED (${unit.speedLabel})',
+          style: TextStyle(
+            color: cx.textBright,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Text(
+          'DISTANCE (${unit.distanceLabel})',
+          style: TextStyle(
+            color: cx.textDim,
+            fontSize: 12,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
+    );
   }
+
 }

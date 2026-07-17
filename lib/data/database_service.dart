@@ -55,6 +55,19 @@ class DatabaseService {
 
   Future<Ride?> getRideById(int id) => isar.rides.get(id);
 
+  /// Rides still missing at least one place name, newest first — the work-list
+  /// for the best-effort geocode backfill (rides saved while offline, or where
+  /// the platform geocoder dropped one of the pair).
+  Future<List<Ride>> getRidesMissingPlaces() {
+    return isar.rides
+        .filter()
+        .startPlaceIsNull()
+        .or()
+        .endPlaceIsNull()
+        .sortByStartTimeDesc()
+        .findAll();
+  }
+
   /// Sets the user-given [name] on an existing ride (from the summary screen).
   /// No-op if the ride was already deleted.
   Future<void> setRideName(int rideId, String name) {
@@ -106,6 +119,25 @@ class DatabaseService {
         .rideIdEqualTo(rideId)
         .sortByTimestamp()
         .findAll();
+  }
+
+  /// The ride's first captured point (its origin), or null if it has none.
+  /// Cheaper than loading the whole track just to geocode the endpoints.
+  Future<TrackPoint?> getFirstTrackPoint(int rideId) {
+    return isar.trackPoints
+        .filter()
+        .rideIdEqualTo(rideId)
+        .sortByTimestamp()
+        .findFirst();
+  }
+
+  /// The ride's last captured point (its destination), or null if it has none.
+  Future<TrackPoint?> getLastTrackPoint(int rideId) {
+    return isar.trackPoints
+        .filter()
+        .rideIdEqualTo(rideId)
+        .sortByTimestampDesc()
+        .findFirst();
   }
 
   // --- Maintenance ---------------------------------------------------------

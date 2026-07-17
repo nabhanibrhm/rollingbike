@@ -36,7 +36,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// `autoDispose` provider would otherwise keep serving the snapshot it read
   /// at launch — never showing rides saved since (the original save bug).
   void _onSelectTab(int i) {
-    if (i == _historyTab) ref.invalidate(rideHistoryProvider);
+    if (i == _historyTab) {
+      ref.invalidate(rideHistoryProvider);
+      // Re-run the best-effort place-name backfill for rides saved offline.
+      ref.invalidate(geocodeBackfillProvider);
+    }
     setState(() => _index = i);
   }
 

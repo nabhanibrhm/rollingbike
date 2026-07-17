@@ -21,6 +21,10 @@ class HistoryScreen extends ConsumerWidget {
     final cx = AppColors.of(context);
     final ridesAsync = ref.watch(rideHistoryProvider);
     final unit = ref.watch(speedUnitProvider);
+    // Kick the best-effort backfill of missing start/end place names (rides
+    // saved offline). Fire-and-forget: it refreshes the list itself when a
+    // name resolves; we don't surface its loading/error state.
+    ref.watch(geocodeBackfillProvider);
 
     return Scaffold(
       backgroundColor: cx.canvas,

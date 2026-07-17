@@ -24,6 +24,15 @@ const double _kMovingSpeedThresholdKmh = 3.0;
 /// updates alone then pull the estimate toward a standstill.
 const double _kDopplerMinSpeedMps = 1.0;
 
+/// A fix's own reported ground speed is reliable at a standstill even when its
+/// heading is too noisy to fuse. If it reads below this (m/s) we trust it as
+/// "stopped" and pin the shown speed to 0 — so GPS position drift/creep can't
+/// surface as a phantom speed spike (e.g. idling in a covered parking queue,
+/// where multipath walks the position several km/h-equivalent while the device
+/// still correctly reports ~0 ground speed). Sits just under the stop threshold
+/// (3 km/h ≈ 0.83 m/s), so it only ever zeroes speeds already below "moving".
+const double _kStationaryDopplerMps = 0.8;
+
 /// Windowed-standstill guard. If the rider's net ground displacement over the
 /// last [_kStationaryWindowSeconds] implies a speed below [_kStationarySpeedKmh],
 /// the shown speed is snapped to 0 — killing the phantom "creep" both GPS
@@ -657,6 +666,16 @@ Future<void> onStart(ServiceInstance service) async {
 
       // Speed comes straight from the filter's velocity estimate — no EMA.
       currentSpeedKmh = kalman.speedKmh;
+
+      // Doppler-zero clamp: trust the fix's own (near-)zero ground speed as a
+      // definitive standstill and pin the shown speed to 0. Kills the phantom
+      // spike the position-derived filter would otherwise report from GPS drift
+      // at a stop — and, unlike the windowed guard below, it fires immediately
+      // (no warm-up) and copes with a monotonic drift that never nets out. Also
+      // guards the stored max speed (updated just below).
+      if (fix.speedMps.isFinite && fix.speedMps < _kStationaryDopplerMps) {
+        currentSpeedKmh = 0.0;
+      }
 
       // Windowed standstill snap: if net ground displacement over the recent
       // window is negligible, the reported speed is GPS "creep", not real

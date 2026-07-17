@@ -15,7 +15,7 @@ import '../providers/tracking_providers.dart';
 import '../services/permission_service.dart';
 import '../theme/app_theme.dart';
 import 'ride_summary_screen.dart';
-import 'speed_distance_chart.dart';
+import 'live_speed_chart.dart';
 
 /// CartoDB basemap URL for the given brightness — dark tiles on the dark theme,
 /// light tiles on the light theme.
@@ -459,9 +459,8 @@ class _ChartBackdrop extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 8),
                 child: SizedBox(
                   height: h,
-                  child: SpeedDistanceChart(
+                  child: LiveSpeedChart(
                     spots: spots,
-                    avgSpeedKmh: state.telemetry?.avgSpeedKmh ?? 0,
                     unit: unit,
                   ),
                 ),

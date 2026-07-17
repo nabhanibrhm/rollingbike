@@ -202,6 +202,9 @@ class TrackingController extends StateNotifier<TrackingUiState> {
     unawaited(() async {
       final startPlace =
           await GeocodingService.placeName(start.latitude, start.longitude);
+      // Space the second lookup off the first so the two don't collide with the
+      // platform Geocoder's rate limit (which was dropping one of the pair).
+      await Future.delayed(const Duration(milliseconds: 300));
       final endPlace =
           await GeocodingService.placeName(end.latitude, end.longitude);
       if (startPlace == null && endPlace == null) return;

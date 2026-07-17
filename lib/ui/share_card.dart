@@ -193,18 +193,18 @@ class ShareCard extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _stat('TOTAL TIME', _totalTime, width: 120, valueSize: 24),
-                const SizedBox(width: 24),
                 _stat('DISTANCE', _distance,
                     unitLabel: _dLabel, width: 120, valueSize: 24),
+                const SizedBox(width: 24),
+                _stat('AVG SPEED', _avg,
+                    unitLabel: _sLabel, width: 120, valueSize: 24),
               ],
             ),
             const SizedBox(height: 14),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _stat('AVG SPEED', _avg,
-                    unitLabel: _sLabel, width: 120, valueSize: 24),
+                _stat('TOTAL TIME', _totalTime, width: 120, valueSize: 24),
                 const SizedBox(width: 24),
                 _stat('MAX SPEED', _max,
                     unitLabel: _sLabel, color: _red, width: 120, valueSize: 24),
@@ -215,7 +215,7 @@ class ShareCard extends StatelessWidget {
         const SizedBox(height: 18),
         _route(width: 190, height: 220),
         const SizedBox(height: 14),
-        _brand(column: true, showName: false),
+        _brand(column: true, showName: true),
       ],
     );
   }
@@ -230,20 +230,14 @@ class ShareCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _speedLegend(),
-                  const SizedBox(height: 6),
-                  _route(width: 116, height: 240, colorBySpeed: true),
-                ],
-              ),
+              _route(width: 116, height: 240, colorBySpeed: true),
               const SizedBox(width: 24),
               Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _speedLegend(),
+                  const SizedBox(height: 16),
                   _stat('DISTANCE', _distance,
                       unitLabel: _dLabel, valueSize: 24, width: 132),
                   const SizedBox(height: 14),
