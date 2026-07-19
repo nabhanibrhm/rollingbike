@@ -5,20 +5,18 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/record_view.dart';
 import '../core/units.dart';
-import 'location_source.dart';
 
 /// Tiny file-backed store for user preferences. Kept dependency-free (plain file
 /// via path_provider, no shared_preferences) in keeping with the offline-first
-/// ethos — currently the theme mode and the (temporary) GPS-source A/B choice.
+/// ethos — the theme mode, display unit, and Record backdrop view.
 ///
-/// Each preference lives in its own tiny file so the background isolate can read
-/// the GPS-source choice without parsing a shared format.
+/// Each preference lives in its own tiny file so a value can be read in isolation
+/// without parsing a shared format.
 class SettingsService {
   SettingsService._();
   static final SettingsService instance = SettingsService._();
 
   static const _fileName = 'settings.txt';
-  static const _gpsSourceFileName = 'gps_source.txt';
   static const _speedUnitFileName = 'speed_unit.txt';
   static const _recordViewFileName = 'record_view.txt';
 
@@ -34,30 +32,6 @@ class SettingsService {
   Future<File> _resolveNamed(String name) async {
     final dir = await getApplicationSupportDirectory();
     return File('${dir.path}/$name');
-  }
-
-  /// Loads the chosen GPS source. Defaults to [LocationSourceKind.raw] (raw
-  /// GNSS won the fused-vs-raw comparison — see gps-source-ab-test notes) on
-  /// first run or any read error. Read from the background isolate at ride
-  /// start.
-  Future<LocationSourceKind> loadGpsSource() async {
-    try {
-      final f = await _resolveNamed(_gpsSourceFileName);
-      if (!await f.exists()) return LocationSourceKind.raw;
-      return LocationSourceKind.fromTag((await f.readAsString()).trim());
-    } catch (_) {
-      return LocationSourceKind.raw;
-    }
-  }
-
-  /// Persists the GPS-source choice. Best-effort.
-  Future<void> saveGpsSource(LocationSourceKind kind) async {
-    try {
-      final f = await _resolveNamed(_gpsSourceFileName);
-      await f.writeAsString(kind.tag);
-    } catch (_) {
-      // best-effort; the choice still applies once written next time
-    }
   }
 
   /// Loads the saved theme mode. Defaults to dark (the app's original look) on

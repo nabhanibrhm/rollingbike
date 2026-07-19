@@ -41,10 +41,10 @@ class Ride {
   /// Peak speed reached during the ride, in km/h.
   double maxSpeedKmh = 0;
 
-  /// Which GPS source recorded this ride ('raw' / 'fused_fast') — a temporary
-  /// A/B tag so diagnostics can compare the two pipelines. Null for rides
-  /// recorded before the switch existed; older rides may carry the retired
-  /// 'fused' tag. Remove once a source is chosen.
+  /// Which GPS pipeline recorded this ride. New rides record with raw GNSS and
+  /// stamp 'raw'; the field is retained mainly for diagnostics and history. Old
+  /// rides may carry the retired 'fused' / 'fused_fast' tags (from the finished
+  /// A/B test) or null (recorded before the tag existed).
   String? gpsSource;
 
   /// Human-readable place name reverse-geocoded from the ride's first GPS fix

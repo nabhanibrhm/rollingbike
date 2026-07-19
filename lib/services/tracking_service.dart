@@ -9,7 +9,6 @@ import '../data/database_service.dart';
 import '../data/models/ride.dart';
 import '../data/models/track_point.dart';
 import 'location_source.dart';
-import 'settings_service.dart';
 
 /// Foreground-service notification id (arbitrary, stable across the app).
 const int _kNotificationId = 888;
@@ -254,10 +253,8 @@ Future<void> onStart(ServiceInstance service) async {
   final db = DatabaseService.instance;
   await db.open();
 
-  // Which GPS pipeline to record with — chosen in the UI before start and
-  // persisted so this isolate can read it. Temporary A/B switch.
-  final sourceKind = await SettingsService.instance.loadGpsSource();
-  final locationSource = LocationSource.forKind(sourceKind);
+  // The app records with raw GNSS (the committed pipeline — see location_source).
+  final locationSource = LocationSource.raw();
 
   // Ride lifecycle: 'acquiring' (waiting for the first usable fix) → 'countdown'
   // (GPS locked, 3-2-1) → 'recording'. The ride clock and the Ride row don't
@@ -441,7 +438,7 @@ Future<void> onStart(ServiceInstance service) async {
     startedAt = now;
     ride = Ride()
       ..startTime = now
-      ..gpsSource = sourceKind.tag;
+      ..gpsSource = 'raw';
     rideId = await db.saveRide(ride!);
     // Flip to recording only after the ride row exists, so an in-flight fix
     // can't try to persist against rideId 0.

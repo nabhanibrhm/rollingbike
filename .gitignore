@@ -48,3 +48,4 @@ CLAUDE.md
 
 #DB store
 /tool/pulled_db/*
+/graphify-out/*
