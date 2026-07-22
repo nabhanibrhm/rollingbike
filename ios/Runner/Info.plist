@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Rollingbike</string>
+	<string>ThrottlePath</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>rollingbike</string>
+	<string>ThrottlePath</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -66,11 +66,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<!-- ===================== LOCATION (RollingBike) ===================== -->
+	<!-- ===================== LOCATION (ThrottlePath) ===================== -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Rolling Bike uses your location to record live riding telemetry — speed, distance, and route.</string>
+	<string>ThrottlePath uses your location to record live riding telemetry — speed, distance, and route.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Rolling Bike needs background location access to keep recording your ride accurately when the screen is locked or the app is in the background.</string>
+	<string>ThrottlePath needs background location access to keep recording your ride accurately when the screen is locked or the app is in the background.</string>
 	<!-- ===================== BACKGROUND EXECUTION ===================== -->
 	<key>UIBackgroundModes</key>
 	<array>

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// RollingBike palette — a single four-colour identity (near-white, amber, red,
+/// ThrottlePath palette — a single four-colour identity (near-white, amber, red,
 /// near-black) drives both themes, matching the design prototype. The
 /// near-white/near-black poles swap between light and dark, while amber (accent)
 /// and red (danger) stay put as the shared accents.

@@ -31,7 +31,7 @@
         android:maxSdkVersion="28" />
 
     <application
-        android:label="Rolling Bike"
+        android:label="ThrottlePath"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

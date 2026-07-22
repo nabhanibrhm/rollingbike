@@ -22,19 +22,19 @@ Future<void> main() async {
         recordViewProvider
             .overrideWith((ref) => RecordViewController(recordView)),
       ],
-      child: const RollingBikeApp(),
+      child: const ThrottlePathApp(),
     ),
   );
 }
 
-class RollingBikeApp extends ConsumerWidget {
-  const RollingBikeApp({super.key});
+class ThrottlePathApp extends ConsumerWidget {
+  const ThrottlePathApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(themeModeProvider);
     return MaterialApp(
-      title: 'RollingBike',
+      title: 'ThrottlePath',
       debugShowCheckedModeBanner: false,
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),

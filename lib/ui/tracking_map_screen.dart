@@ -161,7 +161,7 @@ class _TrackingMapScreenState extends ConsumerState<TrackingMapScreen> {
                 TileLayer(
                   urlTemplate: basemapUrl(cx.isDark),
                   subdomains: const ['a', 'b', 'c', 'd'],
-                  userAgentPackageName: 'id.co.opentrack.rollingbike',
+                  userAgentPackageName: 'id.co.opentrack.throttlepath',
                   // Offline-first: swallow fetch failures (no error spam / red
                   // tiles when there's no signal) and serve from the persistent
                   // disk cache configured in TileCacheService.
@@ -496,7 +496,7 @@ class _StatsBackdrop extends StatelessWidget {
             Icon(Icons.speed, size: 56, color: cx.accentInk),
             const SizedBox(height: 18),
             Text(
-              'RollingBike',
+              'ThrottlePath',
               style: TextStyle(
                 color: cx.accentInk,
                 fontSize: 24,

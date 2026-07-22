@@ -1,4 +1,4 @@
-name: rollingbike
+name: throttlepath
 description: "Offline-first riding telemetry tracker."
 publish_to: 'none'
 version: 1.0.0+1

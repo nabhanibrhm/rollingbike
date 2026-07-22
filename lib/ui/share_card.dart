@@ -36,9 +36,9 @@ enum ShareLayout {
 /// [captureWidgetToPng]).
 ///
 /// Styled after Strava's share sticker: a fully transparent canvas with the
-/// route line and stats floating directly on it (no map tiles — RollingBike is
+/// route line and stats floating directly on it (no map tiles — ThrottlePath is
 /// offline-first, so the route is a vector polyline — and no background panel,
-/// so nothing blocks a photo/video placed behind it), in RollingBike's amber
+/// so nothing blocks a photo/video placed behind it), in ThrottlePath's amber
 /// brand palette. Every piece of text carries a dark drop shadow (in place of a
 /// solid panel) so it stays legible over whatever ends up behind it.
 ///
@@ -403,7 +403,7 @@ class ShareCard extends StatelessWidget {
     );
     if (!showName) return logo;
     const name = Text(
-      'ROLLINGBIKE',
+      'THROTTLEPATH',
       style: TextStyle(
         color: _ink,
         fontSize: 14,

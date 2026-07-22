@@ -77,7 +77,7 @@ class _SplashScreenState extends State<SplashScreen>
               builder: (context, _) {
                 final t = _glow.value; // 0..1
                 return Text(
-                  'RollingBike',
+                  'ThrottlePath',
                   style: TextStyle(
                     color: cx.accentInk,
                     fontSize: 40,

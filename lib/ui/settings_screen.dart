@@ -58,7 +58,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 40),
           Center(
-            child: Text('RollingBike v1.0.0',
+            child: Text('ThrottlePath v1.0.0',
                 style: TextStyle(color: cx.textDim, fontSize: 12)),
           ),
         ],

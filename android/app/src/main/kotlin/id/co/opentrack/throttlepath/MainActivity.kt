@@ -1,4 +1,4 @@
-package id.co.opentrack.rollingbike
+package id.co.opentrack.throttlepath
 
 import android.content.ActivityNotFoundException
 import android.content.ContentValues
@@ -15,7 +15,7 @@ import java.io.IOException
 
 class MainActivity : FlutterActivity() {
 
-    private val channelName = "id.co.opentrack.rollingbike/share"
+    private val channelName = "id.co.opentrack.throttlepath/share"
     private val instagramPackage = "com.instagram.android"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -110,7 +110,7 @@ class MainActivity : FlutterActivity() {
 
     /**
      * Copies the rendered PNG into the device's Photos app via MediaStore, in a
-     * "RollingBike" album (Android 10+). On Android 9 and below, MediaStore
+     * "ThrottlePath" album (Android 10+). On Android 9 and below, MediaStore
      * inserts need the legacy WRITE_EXTERNAL_STORAGE permission — if that's
      * missing, the insert throws and we report "permission_denied" so the Dart
      * side can request it and retry, rather than declaring/requesting it
@@ -128,10 +128,10 @@ class MainActivity : FlutterActivity() {
         }
 
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "rollingbike_${System.currentTimeMillis()}.png")
+            put(MediaStore.Images.Media.DISPLAY_NAME, "throttlepath_${System.currentTimeMillis()}.png")
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/RollingBike")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ThrottlePath")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }

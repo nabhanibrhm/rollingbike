@@ -28,7 +28,7 @@ enum ShareOutcome {
 class RideShare {
   RideShare._();
 
-  static const _channel = MethodChannel('id.co.opentrack.rollingbike/share');
+  static const _channel = MethodChannel('id.co.opentrack.throttlepath/share');
 
   /// The 9:16 sticker canvas the card is centred within, and its output density.
   static const _canvas = Size(360, 640);
@@ -103,7 +103,7 @@ class RideShare {
   }
 
   /// Renders [ride] (+ its [points]) and saves it into the device's Photos
-  /// app, in a "RollingBike" album. Android 10+ needs no permission for this
+  /// app, in a "ThrottlePath" album. Android 10+ needs no permission for this
   /// (scoped storage); on older Android the native side reports back if the
   /// legacy storage permission is missing, so it's only requested when
   /// actually needed.

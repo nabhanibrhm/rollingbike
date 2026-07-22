@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rollingbike/core/gps_kalman.dart';
+import 'package:throttlepath/core/gps_kalman.dart';
 
 void main() {
   const metersPerDegLat = 111320.0;

@@ -397,7 +397,7 @@ class _RouteMap extends StatelessWidget {
             TileLayer(
               urlTemplate: basemapUrl(cx.isDark),
               subdomains: const ['a', 'b', 'c', 'd'],
-              userAgentPackageName: 'id.co.opentrack.rollingbike',
+              userAgentPackageName: 'id.co.opentrack.throttlepath',
               tileProvider: NetworkTileProvider(silenceExceptions: true),
             ),
             if (segments.isNotEmpty) PolylineLayer(polylines: segments),
@@ -566,7 +566,7 @@ class _BaseMap extends StatelessWidget {
         TileLayer(
           urlTemplate: basemapUrl(cx.isDark),
           subdomains: const ['a', 'b', 'c', 'd'],
-          userAgentPackageName: 'id.co.opentrack.rollingbike',
+          userAgentPackageName: 'id.co.opentrack.throttlepath',
           tileProvider: NetworkTileProvider(silenceExceptions: true),
         ),
       ],

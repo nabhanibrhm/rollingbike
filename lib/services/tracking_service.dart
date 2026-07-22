@@ -178,7 +178,7 @@ class TrackingService {
         autoStart: false,
         autoStartOnBoot: false,
         isForegroundMode: true,
-        initialNotificationTitle: 'RollingBike',
+        initialNotificationTitle: 'ThrottlePath',
         initialNotificationContent: 'Preparing to record…',
         foregroundServiceTypes: const [AndroidForegroundType.location],
         // notificationChannelId intentionally omitted: the plugin then creates
@@ -523,18 +523,18 @@ Future<void> onStart(ServiceInstance service) async {
         final String title;
         final String content;
         if (phase == 'acquiring') {
-          title = 'RollingBike — acquiring GPS…';
+          title = 'ThrottlePath — acquiring GPS…';
           content = 'Waiting for a GPS signal';
         } else if (phase == 'countdown') {
-          title = 'RollingBike — starting…';
+          title = 'ThrottlePath — starting…';
           content = 'Ride begins in $countdown';
         } else if (signalLostAt != null) {
-          title = 'RollingBike — GPS signal lost';
+          title = 'ThrottlePath — GPS signal lost';
           content = 'Clock paused · '
               '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
               '${_formatDuration(elapsedSeconds())}';
         } else {
-          title = paused ? 'RollingBike — paused' : 'RollingBike — recording';
+          title = paused ? 'ThrottlePath — paused' : 'ThrottlePath — recording';
           content = '${(totalDistanceMeters / 1000).toStringAsFixed(2)} km · '
               '${_formatDuration(elapsedSeconds())}';
         }

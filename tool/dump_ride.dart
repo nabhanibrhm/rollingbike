@@ -3,8 +3,8 @@
 import 'dart:math' as math;
 
 import 'package:isar_community/isar.dart';
-import 'package:rollingbike/data/models/ride.dart';
-import 'package:rollingbike/data/models/track_point.dart';
+import 'package:throttlepath/data/models/ride.dart';
+import 'package:throttlepath/data/models/track_point.dart';
 
 double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
   const r = 6371000.0;

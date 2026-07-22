@@ -2,7 +2,7 @@
 // Feeds a synthetic step change in true speed and reports how long the
 // filter's output takes to reach 63% / 90% / 95% of the change.
 // Run: dart run tool/kalman_step.dart
-import 'package:rollingbike/core/gps_kalman.dart';
+import 'package:throttlepath/core/gps_kalman.dart';
 
 /// Drive the filter through a step from v0 -> v1 (m/s) at a fixed fix cadence,
 /// with or without Doppler fusion, and print the rise times.
