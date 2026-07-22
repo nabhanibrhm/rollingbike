@@ -62,10 +62,10 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/icon/logo_legacy.png"              # legacy (pre-API 26) square icon
-  adaptive_icon_foreground: "assets/icon/logo_foreground.png"  # mark pre-scaled + centered
+  image_path: "assets/icon/app_icon.png"                 # new ThrottlePath logo (full-bleed square)
+  adaptive_icon_foreground: "assets/icon/app_icon.png"   # same logo; its baked dark bg blends into adaptive_icon_background
   adaptive_icon_background: "#0A0A0A"
-  adaptive_icon_foreground_inset: 0                      # padding is baked into the asset
+  adaptive_icon_foreground_inset: 16                     # pad the tight-cropped mark into the adaptive safe zone
 
 flutter:
   uses-material-design: true
